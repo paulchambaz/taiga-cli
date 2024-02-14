@@ -1,6 +1,6 @@
 [package]
 name = "taiga-cli"
-description = "CLI tool for taiga.io"
+description = "Cli tool for taiga.io inspired by taskwarrior"
 authors = [ "Paul Chambaz <paul.chambaz@tuta.com>" ]
 homepage = "https://github.com/paulchambaz/taiga-cli"
 version = "1.0.0"
