@@ -1,0 +1,20 @@
+name: CI
+run-name: Master branch validation
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    # install nix
+    - uses: cachix/install-nix-action@v22
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+
+    # test the code
+    - run: nix develop -c just test
