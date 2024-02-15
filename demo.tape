@@ -2,7 +2,7 @@ Output demo.gif
 
 Set FontSize 20
 Set Width 1200
-Set Height 600
+Set Height 675
 # Set FontFamily "SauceCodePro Nerd Font Mono"
 Set Theme "Gruvbox Dark"
 Set Padding 20

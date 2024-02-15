@@ -11,7 +11,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use cli::{AssignTaskArgs, BlockTaskArgs, ClientTaskArgs, DeleteTaskArgs, DoneTaskArgs, DueTaskArgs, ModifyTaskArgs, MoveTaskArgs, NewTaskArgs, ProjectUserArgs, RenameTaskArgs, SearchTaskArgs, TeamTaskArgs};
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{row, Cell, Row, Table};
-use task::{ReqModArgs, ReqNewArgs};
+use task::{ReqModArgs, ReqNewArgs, TaigaTask};
 use crate::project::TaigaProject;
 use std::collections::HashSet;
 use std::process::exit;
@@ -132,7 +132,7 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
     };
     taiga_tasks.save_cache();
 
-    let tasks = taiga.tasks_from_cache(project.id, |tasks| {
+    let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
         for status in &args.include_statuses {
             if !tasks.statuses.iter().any(|s| s.slug == *status) {
                 return true;
@@ -155,7 +155,6 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         }
         false
     });
-    tasks.clone().save_cache();
 
     let mut include_status_ids = Vec::new();
     for status in args.include_statuses {
@@ -218,66 +217,67 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         "ID", "STATUS", "DUE", "NAME", "ASSIGN", "T", "C", "B"
     ]);
 
-    // TODO: this should be in a specific function, since this will be quite common - probably...
-    let mut i = 0;
-    for task in tasks.tasks {
-
+    let filter_tasks: Vec<TaigaTask> = tasks.tasks.into_iter().filter(|task| {
         if let Some(team) = args.team {
             if task.team != team {
-                continue;
+                return false;
             }
         }
 
         if let Some(client) = args.client {
             if task.client != client {
-                continue;
+                return false;
             }
         }
 
         if let Some(block) = args.block {
             if task.blocked != block {
-                continue;
+                return false;
             }
         }
 
         if let Some(due_date) = &args.due_date {
             if due_date.is_empty() {
                 if task.due.is_some() {
-                    continue;
+                    return false;
                 }
             } else if let Some(task_due) = task.due {
                 let a = task_due.date_naive();
                 let b = NaiveDate::parse_from_str(due_date, "%Y-%m-%d").expect("Could not parse due date");
                 if a > b {
-                    continue;
+                    return false;
                 }
             } else {
-                continue;
+                return false;
             }
         }
 
         if !include_member_ids.is_empty() && !task.assigned.iter().any(|id| include_member_ids.iter().any(|member_id| member_id == id)) {
-            continue;
+            return false;
         }
 
         if !exclude_member_ids.is_empty() && task.assigned.iter().any(|id| exclude_member_ids.iter().any(|member_id| member_id == id)) {
-            continue;
+            return false;
         }
 
         if !include_status_ids.is_empty() && !include_status_ids.iter().any(|id| *id == task.status_id) {
-            continue;
+            return false;
         }
 
         if !exclude_status_ids.is_empty() && exclude_status_ids.iter().any(|id| *id == task.status_id) {
-            continue;
+            return false;
         }
 
         if !fzf_match(&task.name, &args.query) {
-            continue;
+            return false;
         }
 
-        // query: []
+        true
+    }).collect();
+    tasks.tasks = filter_tasks;
+    tasks.clone().save_cache();
 
+    for (i, task) in tasks.tasks.iter().enumerate() {
         let assigned = task
             .assigned
             .iter()
@@ -310,8 +310,6 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
             Cell::new(if task.client { "Y" } else { "" }),
             Cell::new(if task.blocked { "Y" } else { "" }),
         ]));
-
-        i += 1;
     }
     table.printstd();
 }
