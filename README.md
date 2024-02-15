@@ -53,14 +53,14 @@ Commands:
   projects           Refresh and print the project list
                      
 Projects:            
-  project-demo  Run command on project-demo
+  demo  Run command on demo
                      
 Options:             
   --help             Print the help message and exit
   --version          Print the version and exit
 ```
 
-*Do note that project-demo is a placehold and that your actual taiga project will be listed in the projects section.*
+*Do note that demo is a placehold and that your actual taiga project will be listed in the projects section.*
 
 ## Building
 
