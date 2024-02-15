@@ -423,6 +423,9 @@ fn cli_project_new(project: String, args: &[String]) -> TaigaCmd {
             if !others.is_empty() {
                 can_continuous = false;
             }
+        } else if arg.contains(':') {
+            cli_project_new_help(project);
+            exit(1);
         } else {
             if !can_continuous {
                 cli_project_new_help(project);
@@ -919,10 +922,13 @@ fn cli_project_modify(project: String, id: usize, args: &[String]) -> TaigaCmd {
             if !others.is_empty() {
                 can_continuous = false;
             }
+        } else if arg.contains(':') {
+            cli_project_new_help(project);
+            exit(1);
         } else {
             if !can_continuous {
                 cli_project_new_help(project);
-                exit(0);
+                exit(1);
             }
             others.push(arg.clone());
         }
@@ -1127,6 +1133,9 @@ fn cli_project_search(project: String, args: &[String]) -> TaigaCmd {
             if !query.is_empty() {
                 can_continuous = false;
             }
+        } else if arg.contains(':') {
+            cli_project_new_help(project);
+            exit(1);
         } else {
             if !can_continuous {
                 cli_project_new_help(project);
