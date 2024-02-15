@@ -117,6 +117,12 @@ pub struct ProjectUserArgs {
 }
 
 #[derive(Debug)]
+pub struct DeleteTaskArgs {
+    pub project: String,
+    pub id: usize,
+}
+
+#[derive(Debug)]
 pub struct ProjectBurndownArgs {
     pub project: String,
 }
@@ -137,6 +143,7 @@ pub enum TaigaCmd {
     BlockTask(BlockTaskArgs),
     ModifyTask(ModifyTaskArgs),
     SearchTask(SearchTaskArgs),
+    DeleteTask(DeleteTaskArgs),
     ProjectUsers(ProjectUserArgs),
     ProjectBurndown(ProjectBurndownArgs),
 }
@@ -310,7 +317,7 @@ fn cli_project(project: String, args: &[String]) -> TaigaCmd {
                 exit(1);
             }
         },
-        "modify" => {
+        "mod" | "modify" => {
             if let Some(id) = args.get(1).and_then(|id| id.parse::<usize>().ok()) {
                 cli_project_modify(project, id, &args[2..])
             } else {
@@ -318,9 +325,9 @@ fn cli_project(project: String, args: &[String]) -> TaigaCmd {
                 exit(1);
             }
         },
-        "mod" => {
+        "del" | "delete" => {
             if let Some(id) = args.get(1).and_then(|id| id.parse::<usize>().ok()) {
-                cli_project_modify(project, id, &args[2..])
+                cli_project_delete(project, id, &args[2..])
             } else {
                 cli_help_project(project);
                 exit(1);
@@ -345,8 +352,8 @@ fn cli_project(project: String, args: &[String]) -> TaigaCmd {
                         "team" => cli_project_team(project, id, &args[2..]),
                         "client" => cli_project_client(project, id, &args[2..]),
                         "block" => cli_project_block(project, id, &args[2..]),
-                        "modify" => cli_project_modify(project, id, &args[2..]),
-                        "mod" => cli_project_modify(project, id, &args[2..]),
+                        "mod" | "modify" => cli_project_modify(project, id, &args[2..]),
+                        "del" | "delete" => cli_project_delete(project, id, &args[2..]),
                         _ => {
                             cli_help_project(project);
                             exit(1);
@@ -581,6 +588,27 @@ fn cli_project_done(project: String, id: usize, args: &[String]) -> TaigaCmd {
 
 fn cli_project_done_help(project: String, id: usize) {
     let mut help_message = HelpMessage::new("Declare a task as done", &format!("taiga {} done {}", project, id), "<OPTIONS>");
+    help_message.add_section("Options");
+    help_message.add_command("--help", "Print the help message and exit");
+    help_message.display();
+}
+
+fn cli_project_delete(project: String, id: usize, args: &[String]) -> TaigaCmd {
+    if args.contains(&"--help".to_string()) {
+        cli_project_delete_help(project, id);
+        exit(0);
+    }
+
+    if !args.is_empty() {
+        cli_project_delete_help(project, id);
+        exit(1);
+    }
+
+    TaigaCmd::DeleteTask(DeleteTaskArgs { project, id })
+}
+
+fn cli_project_delete_help(project: String, id: usize) {
+    let mut help_message = HelpMessage::new("Delete a task", &format!("taiga {} delete {}", project, id), "<OPTIONS>");
     help_message.add_section("Options");
     help_message.add_command("--help", "Print the help message and exit");
     help_message.display();
@@ -1263,6 +1291,7 @@ fn cli_help_project(project: String) {
     help_message.add_command("client <CARD-ID>", "Toggle client requirement for a task");
     help_message.add_command("block <CARD-ID>", "Toggle block for a task");
     help_message.add_command("modify <CARD-ID>", "Modify a task");
+    help_message.add_command("delete <CARD-ID>", "Delete a task");
     help_message.add_command("search", "Search for tasks that fit requirements");
     help_message.add_command("users", "List users for the project");
     help_message.add_command("burndown", "List statistics for the project");

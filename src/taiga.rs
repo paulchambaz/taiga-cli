@@ -106,6 +106,21 @@ impl Taiga {
         client.get(format!("{}{}", self.url, path)).headers(headers)
     }
 
+    pub fn delete_request(&self, path: &str) -> RequestBuilder {
+        let client = Client::new();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", self.auth_token))
+                .expect("Could not get token"),
+        );
+
+
+        client.delete(format!("{}{}", self.url, path)).headers(headers)
+    }
+
     pub fn post_request<T>(&self, path: &str, json: &T) -> RequestBuilder
     where
         T: Serialize + ?Sized,

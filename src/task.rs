@@ -1,6 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use directories::ProjectDirs;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::fs::{self, File};
@@ -138,6 +139,17 @@ impl Taiga {
         let task = TaigaTask::new(&user_story_response);
 
         Ok(task)
+    }
+
+    pub fn delete_task(&self, task_id: i32) -> Result<()> {
+        let request = self.delete_request(&format!("/userstories/{}", task_id));
+        let response = request.send()?;
+
+        if response.status() != StatusCode::NO_CONTENT {
+            return Err(anyhow!("Unexpected server response: {}", response.status()));
+        }
+
+        Ok(())
     }
 
     pub fn rename_task(&self, task_id: i32, name: String, version: i32) -> Result<TaigaTask> {

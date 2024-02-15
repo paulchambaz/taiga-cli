@@ -8,7 +8,7 @@ mod task;
 mod auth;
 
 use chrono::{DateTime, NaiveDate, Utc};
-use cli::{AssignTaskArgs, BlockTaskArgs, ClientTaskArgs, DoneTaskArgs, DueTaskArgs, ModifyTaskArgs, MoveTaskArgs, NewTaskArgs, ProjectUserArgs, RenameTaskArgs, SearchTaskArgs, TeamTaskArgs};
+use cli::{AssignTaskArgs, BlockTaskArgs, ClientTaskArgs, DeleteTaskArgs, DoneTaskArgs, DueTaskArgs, ModifyTaskArgs, MoveTaskArgs, NewTaskArgs, ProjectUserArgs, RenameTaskArgs, SearchTaskArgs, TeamTaskArgs};
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{row, Cell, Row, Table};
 use task::{ReqModArgs, ReqNewArgs};
@@ -52,6 +52,7 @@ fn main() {
         TaigaCmd::ClientTask(args) => taiga_client(&mut taiga, args),
         TaigaCmd::BlockTask(args) => taiga_block(&mut taiga, args),
         TaigaCmd::ModifyTask(args) => taiga_modify(&mut taiga, args),
+        TaigaCmd::DeleteTask(args) => taiga_delete(&mut taiga, args),
         TaigaCmd::SearchTask(args) => taiga_search(&mut taiga, args),
         TaigaCmd::ProjectUsers(args) => taiga_users(&mut taiga, args),
         other => println!("TODO: {:?}", other),
@@ -430,6 +431,17 @@ pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) {
         tasks.save_cache();
     } else {
         eprintln!("Error, could not move task");
+        exit(1);
+    }
+}
+
+pub fn taiga_delete(taiga: &mut Taiga, args: DeleteTaskArgs) {
+    let project = taiga.find_project(args.project);
+    let mut tasks = taiga.tasks_from_cache(project.id, |tasks| tasks.statuses.is_empty());
+    let task = tasks.get_task(args.id);
+
+    if taiga.delete_task(task.id).is_err() {
+        eprintln!("Error, could not delete task");
         exit(1);
     }
 }
