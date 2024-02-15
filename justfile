@@ -5,7 +5,7 @@ watch *ARGS:
   cargo watch -x run {{ ARGS }}
 
 run *ARGS:
-  cargo run {{ ARGS }}
+  @cargo run -q {{ ARGS }}
 
 build:
   cargo build --release

@@ -8,7 +8,7 @@ mod task;
 mod auth;
 
 use chrono::{DateTime, NaiveDate, Utc};
-use cli::{AssignTaskArgs, BlockTaskArgs, ClientTaskArgs, DoneTaskArgs, DueTaskArgs, ModifyTaskArgs, MoveTaskArgs, NewTaskArgs, RenameTaskArgs, SearchTaskArgs, TeamTaskArgs};
+use cli::{AssignTaskArgs, BlockTaskArgs, ClientTaskArgs, DoneTaskArgs, DueTaskArgs, ModifyTaskArgs, MoveTaskArgs, NewTaskArgs, ProjectUserArgs, RenameTaskArgs, SearchTaskArgs, TeamTaskArgs};
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{row, Cell, Row, Table};
 use task::{ReqModArgs, ReqNewArgs};
@@ -53,6 +53,7 @@ fn main() {
         TaigaCmd::BlockTask(args) => taiga_block(&mut taiga, args),
         TaigaCmd::ModifyTask(args) => taiga_modify(&mut taiga, args),
         TaigaCmd::SearchTask(args) => taiga_search(&mut taiga, args),
+        TaigaCmd::ProjectUsers(args) => taiga_users(&mut taiga, args),
         other => println!("TODO: {:?}", other),
     };
 }
@@ -209,10 +210,6 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         };
         exclude_member_ids.push(member_id);
     }
-
-    // we have to build the array of include_status_ids
-    // we have to build the array of exclude_status_ids
-
 
     let mut table = Table::new();
     table.set_format(*FORMAT_CLEAN);
@@ -399,6 +396,16 @@ pub fn taiga_new(taiga: &mut Taiga, args: NewTaskArgs) {
     } else {
         eprintln!("Error, could not create new task");
         exit(1);
+    }
+}
+
+pub fn taiga_users(taiga: &mut Taiga, args: ProjectUserArgs) {
+    let project = taiga.find_project(args.project);
+    let tasks = taiga.tasks_from_cache(project.id, |_| true);
+    tasks.clone().save_cache();
+
+    for user in tasks.members {
+        println!("{}", user.username);
     }
 }
 
