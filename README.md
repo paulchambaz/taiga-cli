@@ -38,7 +38,7 @@ yay -S taiga-cli
 
 ## Usage
 
-To understand how to use this program, it is recommended to read the [`man`](./taiga-cli.1.scd) page. All instructions are detailed there.
+To understand how to use this program, it is recommended to read the [`man`](./taiga.1.scd) page. All instructions are detailed there.
 
 Here is a brief overview of the program :
 
