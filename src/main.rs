@@ -90,12 +90,15 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
 
     tasks.retain(|task| !task.closed);
     tasks.sort_by(|a, b| {
-        a.status_id.cmp(&-b.status_id)
+        b.status_id.cmp(&a.status_id) // Reverse the order to ensure higher status_ids go first
             .then_with(|| {
                 match (&a.due, &b.due) {
+                    // If both tasks have due dates, compare them directly.
                     (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
+                    // If only one task has a due date, it goes first.
                     (Some(_), None) => std::cmp::Ordering::Less,
                     (None, Some(_)) => std::cmp::Ordering::Greater,
+                    // If neither task has a due date, they are considered equal.
                     (None, None) => std::cmp::Ordering::Equal,
                 }
             })
