@@ -89,7 +89,17 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
     });
 
     tasks.retain(|task| !task.closed);
-    tasks.sort_by(|a, b| b.status_id.cmp(&a.status_id));
+    tasks.sort_by(|a, b| {
+        a.status_id.cmp(&-b.status_id)
+            .then_with(|| {
+                match (&a.due, &b.due) {
+                    (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                }
+            })
+    });
 
     let project = match TaigaProject::from_cache(id) {
         Some(project) => {

@@ -82,10 +82,11 @@ impl Taiga {
     pub fn save_cache(&self) {
         let project_dirs =
             ProjectDirs::from("", "", "taiga").expect("Could not get standard directories");
-        let serialized_data = bincode::serialize(&self).expect("Serialization failed");
         let cache_dir = project_dirs.cache_dir();
         fs::create_dir_all(cache_dir).expect("Could not create parent directories");
         let taiga_path = cache_dir.join("config");
+
+        let serialized_data = bincode::serialize(&self).expect("Serialization failed");
 
         let mut file = File::create(taiga_path).expect("Could not save create cache file");
         file.write_all(&serialized_data)
