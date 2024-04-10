@@ -8,9 +8,9 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::process::exit;
 
-use crate::taiga::TaigaUser;
 use crate::project::TaigaStatus;
 use crate::taiga::Taiga;
+use crate::taiga::TaigaUser;
 
 pub struct ReqNewArgs {
     pub status_id: i32,
@@ -86,7 +86,6 @@ impl Taiga {
             let response = request.send()?;
 
             if response.status().is_success() {
-
                 let headers = response.headers();
 
                 match headers.get("x-pagination-next") {
@@ -99,7 +98,7 @@ impl Taiga {
                             exit(1);
                         }
                         url = new_url;
-                    },
+                    }
                     None => url.clear(), // Clear the URL to exit the loop
                 };
 
@@ -343,7 +342,7 @@ impl Taiga {
         let new_request = NewRequest {
             assigned_to: member,
             client_requirement: args.client,
-            is_blocked:args. block,
+            is_blocked: args.block,
             project: project_id,
             status: args.status_id,
             subject: args.name,
@@ -363,7 +362,6 @@ impl Taiga {
 }
 
 impl TaigaTask {
-    
     fn slug(input: String) -> String {
         input
             .chars()
