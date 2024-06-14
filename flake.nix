@@ -33,24 +33,18 @@
         src = ./.;
         cargoHash = "sha256-Li4pxu1JnIfuOGy51/FrFj5DTZ3oWuzg647qYgWyGmk=";
 
-        buildInputs = libPkgs ++ buildPkgs;
-
-        configurePhase = ''
-          export PATH=${pkgs.lib.makeBinPath buildPkgs}:$PATH
-          export PKG_CONFIG_PATH="${pkgs.openssl_3.dev}/lib/pkgconfig"
-        '';
+        nativeBuildInputs = buildPkgs;
+        buildInputs = libPkgs;
 
         postInstall = ''
           mkdir -p $out/share/man/man1
           scdoc < taiga.1.scd > $out/share/man/man1/taiga.1
         '';
       };
-      devShell = pkgs.mkShell {
-        buildInputs = libPkgs ++ buildPkgs ++ devPkgs;
 
-        shellHook = ''
-          export PKG_CONFIG_PATH="${pkgs.openssl_3.dev}/lib/pkgconfig"
-        '';
+      devShell = pkgs.mkShell {
+        nativeBuildInputs = buildPkgs;
+        buildInputs = libPkgs ++ devPkgs;
       };
     });
 }
