@@ -12,6 +12,10 @@
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
 
+      buildPkgs = with pkgs; [
+        pkg-config
+      ];
+
       libPkgs = with pkgs; [
         openssl_3
       ];
@@ -22,16 +26,16 @@
         vhs
       ];
     in {
-      default = pkgs.rustPlatform.buildRustPackage {
+      packages.default = pkgs.rustPlatform.buildRustPackage {
         pname = "taiga-cli";
         version = "1.0.0";
         src = ./.;
-        cargoHash = "";
-        buildInputs = libPkgs;
-        # PKG_CONFIG_PATH="${pkgs.openssl_3.dev}/lib/pkgconfig";
+        cargoHash = "sha256-Li4pxu1JnIfuOGy51/FrFj5DTZ3oWuzg647qYgWyGmk=";
+        buildInputs = libPkgs ++ buildPkgs;
+        PKG_CONFIG_PATH = "${pkgs.openssl_3.dev}/lib/pkgconfig";
       };
       devShell = pkgs.mkShell {
-        buildInputs = libPkgs ++ devPkgs;
+        buildInputs = libPkgs ++ buildPkgs ++ devPkgs;
 
         shellHook = ''
           export PKG_CONFIG_PATH="${pkgs.openssl_3.dev}/lib/pkgconfig"
