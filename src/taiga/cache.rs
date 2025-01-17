@@ -4,9 +4,9 @@ use sha1::{Digest, Sha1};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::process::exit;
 
-use super::Taiga;
-use super::TaigaProject;
+use super::{Taiga, TaigaProject, TaigaTask, TaigaTasks};
 
 impl Taiga {
     pub fn from_cache() -> Option<Self> {
@@ -80,6 +80,25 @@ impl Taiga {
     fn get_cache_path() -> Option<PathBuf> {
         ProjectDirs::from("", "", "taiga").map(|proj_dirs| proj_dirs.cache_dir().join("config"))
     }
+
+    pub fn tasks_from_cache<F>(&mut self, id: i32, update: F) -> TaigaTasks
+    where
+        F: FnOnce(&TaigaTasks) -> bool,
+    {
+        match TaigaTasks::from_cache(id) {
+            Some(tasks) => {
+                if update(&tasks) {
+                    self.update_tasks(id, tasks)
+                } else {
+                    tasks
+                }
+            }
+            _ => {
+                eprintln!("Invalid task id for this project");
+                exit(1);
+            }
+        }
+    }
 }
 
 impl TaigaProject {
@@ -130,5 +149,60 @@ impl TaigaProject {
             .context("Could not write cache data")?;
 
         Ok(())
+    }
+}
+
+impl TaigaTasks {
+    pub fn get_task(&mut self, id: usize) -> &mut TaigaTask {
+        self.tasks.get_mut(id - 1).unwrap_or_else(|| {
+            eprintln!("Invalid task for this project");
+            exit(1);
+        })
+    }
+
+    pub fn from_cache(id: i32) -> Option<Self> {
+        let project_dirs = ProjectDirs::from("", "", "taiga").unwrap_or_else(|| {
+            eprintln!("Could not get standard directories");
+            exit(1);
+        });
+        let cache_dir = project_dirs.cache_dir();
+
+        let mut hasher = Sha1::new();
+        hasher.update(format!("tasks-{}", id).as_bytes());
+        let hash = hasher.finalize();
+        let filename = format!("{:x}", hash);
+
+        let path = cache_dir.join(filename);
+
+        if !path.exists() {
+            return None;
+        }
+
+        let mut file = File::open(&path).expect("Could not open cache file");
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .expect("Could not read cache file");
+        let tasks =
+            bincode::deserialize::<Self>(&buffer[..]).expect("Could not deserialize cache file");
+
+        Some(tasks)
+    }
+
+    pub fn save_cache(self) {
+        let project_dirs =
+            ProjectDirs::from("", "", "taiga").expect("Could not get standard directories");
+        let cache_dir = project_dirs.cache_dir();
+        fs::create_dir_all(cache_dir).expect("Could not create parent directories");
+
+        let mut hasher = Sha1::new();
+        hasher.update(format!("tasks-{}", self.id).as_bytes());
+        let hash = hasher.finalize();
+        let filename = format!("{:x}", hash);
+
+        let path = cache_dir.join(filename);
+        let serialized_data = bincode::serialize(&self).expect("Serialization failed");
+        let mut file = File::create(path).expect("Could not create cache file");
+        file.write_all(&serialized_data)
+            .expect("Could not save cache");
     }
 }

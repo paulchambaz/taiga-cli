@@ -1,8 +1,10 @@
+use std::process::exit;
+
 use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::Taiga;
+use super::{Taiga, TaigaStatus, TaigaUser};
 use crate::utils::slug;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -18,6 +20,14 @@ pub struct TaigaTask {
     pub due: Option<DateTime<Utc>>,
     pub closed: bool,
     pub version: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaigaTasks {
+    pub id: i32,
+    pub tasks: Vec<TaigaTask>,
+    pub members: Vec<TaigaUser>,
+    pub statuses: Vec<TaigaStatus>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -257,6 +267,24 @@ impl Taiga {
             },
         )
         .map(|t| TaigaTask::new(&t))
+    }
+
+    pub fn update_tasks(&mut self, id: i32, tasks: TaigaTasks) -> TaigaTasks {
+        let project = self.get_project(id).unwrap_or_else(|err| {
+            eprintln!("Error, could not get project: {}", err);
+            exit(1);
+        });
+
+        let tasks = TaigaTasks {
+            id: tasks.id,
+            tasks: tasks.tasks.clone(),
+            members: project.members,
+            statuses: project.statuses,
+        };
+
+        tasks.clone().save_cache();
+
+        tasks
     }
 }
 
