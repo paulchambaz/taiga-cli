@@ -22,6 +22,9 @@
       ];
 
       devPkgs = with pkgs; [
+        cargo
+        rustfmt
+        rustc
         just
         cargo-tarpaulin
         vhs

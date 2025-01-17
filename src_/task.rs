@@ -74,8 +74,6 @@ struct UserStory {
     version: i32,
 }
 
-// TODO: implement lazy refresh - that will happen every once in a while and im not sure its
-// implemented yet
 impl Taiga {
     pub fn get_tasks(&self, id: i32) -> Result<Vec<TaigaTask>> {
         let mut tasks = Vec::new();
@@ -324,7 +322,6 @@ impl Taiga {
         Ok(task)
     }
 
-    // pub fn new_task(&self, project_id: i32, status_id: i32, name: String, assign: Vec<i32>, team: bool, client: bool, block: bool) -> Result<TaigaTask> {
     pub fn new_task(&self, project_id: i32, args: ReqNewArgs) -> Result<TaigaTask> {
         #[derive(Debug, Serialize)]
         struct NewRequest {

@@ -5,5 +5,3 @@ pub struct TaigaUser {
     pub id: i32,
     pub username: String,
 }
-
-impl TaigaUser {}

@@ -1,11 +1,8 @@
-usage:
-  @just --list
+run *ARGS:
+  cargo run {{ ARGS }}
 
 watch *ARGS:
   cargo watch -x run {{ ARGS }}
-
-run *ARGS:
-  cargo run {{ ARGS }}
 
 build:
   cargo build --release
