@@ -34,7 +34,7 @@
         pname = "taiga-cli";
         version = "1.1.1";
         src = ./.;
-        cargoHash = "sha256-tgWGLuaO0zap+gQJM/vvk85yv5ch/mlDhfSbIfZMjeU=";
+        cargoHash = "sha256-Aivw1L+01LKv4isn8EZLd2b4sD4HXeL9b00qmGSAjgo=";
 
         nativeBuildInputs = buildPkgs;
         buildInputs = libPkgs;
