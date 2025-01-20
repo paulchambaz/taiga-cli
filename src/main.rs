@@ -237,7 +237,23 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
 
     let mut table = Table::new();
     table.set_format(*FORMAT_CLEAN);
-    table.add_row(row!["ID", "STATUS", "DUE", "NAME", "ASSIGN", "T", "C", "B"]);
+
+    let has_team = tasks.tasks.iter().any(|task| task.team);
+    let has_client = tasks.tasks.iter().any(|task| task.client);
+    let has_block = tasks.tasks.iter().any(|task| task.blocked);
+
+    let mut headers = vec!["ID", "STATUS", "DUE", "NAME", "ASSIGN"];
+    if has_team {
+        headers.push("T");
+    }
+    if has_client {
+        headers.push("C");
+    }
+    if has_block {
+        headers.push("B");
+    }
+
+    table.add_row(Row::from_iter(headers.iter().map(|&h| h)));
 
     let filter_tasks: Vec<TaigaTask> = tasks
         .tasks
@@ -340,16 +356,25 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
             "".to_string()
         };
 
-        table.add_row(Row::new(vec![
+        let mut row_cells = vec![
             Cell::new(&format!("{}", i + 1)),
             Cell::new(&task.status),
             Cell::new(&due),
             Cell::new(&task.name),
             Cell::new(&assigned),
-            Cell::new(if task.team { "Y" } else { "" }),
-            Cell::new(if task.client { "Y" } else { "" }),
-            Cell::new(if task.blocked { "Y" } else { "" }),
-        ]));
+        ];
+
+        if has_team {
+            row_cells.push(Cell::new(if task.team { "Y" } else { "" }));
+        }
+        if has_client {
+            row_cells.push(Cell::new(if task.client { "Y" } else { "" }));
+        }
+        if has_block {
+            row_cells.push(Cell::new(if task.blocked { "Y" } else { "" }));
+        }
+
+        table.add_row(Row::from_iter(row_cells));
     }
     table.printstd();
 }
