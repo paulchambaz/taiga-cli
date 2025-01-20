@@ -80,6 +80,8 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         exit(1);
     });
 
+    println!("{:?}", tasks);
+
     tasks.retain(|task| !task.closed);
     tasks.sort_by(|a, b| {
         b.status_id

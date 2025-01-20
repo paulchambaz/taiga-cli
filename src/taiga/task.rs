@@ -1,7 +1,7 @@
 use std::process::exit;
 
 use anyhow::Result;
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{Taiga, TaigaStatus, TaigaUser};
@@ -300,8 +300,8 @@ impl TaigaTask {
             blocked: t.is_blocked,
             assigned: t.assigned_users.clone(),
             due: t.due_date.as_ref().and_then(|date| {
-                format!("{date} 00:00:00")
-                    .parse::<NaiveDateTime>()
+                date.parse::<NaiveDate>()
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
                     .ok()
                     .map(|dt| Utc.from_utc_datetime(&dt))
             }),
