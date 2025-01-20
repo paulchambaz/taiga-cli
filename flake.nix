@@ -32,9 +32,9 @@
     in {
       packages.default = pkgs.rustPlatform.buildRustPackage {
         pname = "taiga-cli";
-        version = "1.1.1";
+        version = "1.1.3";
         src = ./.;
-        cargoHash = "sha256-OOm3ChoQu5ASFt3BNwDrXsNP7o3ljY8J1xwQx69SMMI=";
+        cargoHash = "sha256-dKqCEJU01AcXKeYq8psMFBzVzYzbxY7Zxfnq5rFc0MI=";
 
         nativeBuildInputs = buildPkgs;
         buildInputs = libPkgs;
