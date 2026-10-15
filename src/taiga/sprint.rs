@@ -1,8 +1,11 @@
+//! Sprints and their burndown figures.
+
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{Error, Result, Taiga};
 
+/// A sprint, which Taiga calls a milestone.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaigaSprint {
     pub id: i32,
@@ -39,21 +42,23 @@ struct SprintDates {
     closed: bool,
 }
 
+fn pick_current(sprints: &[SprintDates], today: NaiveDate) -> Option<i32> {
+    let open = || sprints.iter().filter(|sprint| !sprint.closed);
+
+    open()
+        .find(|sprint| sprint.estimated_start <= today && today <= sprint.estimated_finish)
+        .or_else(|| open().max_by_key(|sprint| sprint.estimated_finish))
+        .map(|sprint| sprint.id)
+}
+
 impl Taiga {
     /// Finds the open sprint running today, or else the open one ending last.
     ///
     /// # Errors
     /// Returns an error when the sprints cannot be fetched or none is open.
     pub fn current_sprint(&mut self, project_id: i32) -> Result<i32> {
-        let today = Utc::now().date_naive();
         let sprints: Vec<SprintDates> = self.get(&format!("/milestones?project={project_id}"))?;
-        let open = || sprints.iter().filter(|sprint| !sprint.closed);
-
-        open()
-            .find(|sprint| sprint.estimated_start <= today && today <= sprint.estimated_finish)
-            .or_else(|| open().max_by_key(|sprint| sprint.estimated_finish))
-            .map(|sprint| sprint.id)
-            .ok_or(Error::NoOpenSprint)
+        pick_current(&sprints, Utc::now().date_naive()).ok_or(Error::NoOpenSprint)
     }
 
     /// Fetches the burndown figures of a sprint.
@@ -62,5 +67,51 @@ impl Taiga {
     /// Returns an error when the request fails or the answer is not understood.
     pub fn sprint_stats(&mut self, sprint_id: i32) -> Result<SprintStats> {
         self.get(&format!("/milestones/{sprint_id}/stats"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn day(day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 10, day).unwrap()
+    }
+
+    fn sprint(id: i32, start: u32, finish: u32, closed: bool) -> SprintDates {
+        SprintDates {
+            id,
+            estimated_start: day(start),
+            estimated_finish: day(finish),
+            closed,
+        }
+    }
+
+    #[test]
+    fn the_sprint_running_today_wins() {
+        let sprints = [
+            sprint(1, 1, 7, false),
+            sprint(2, 8, 21, false),
+            sprint(3, 22, 30, false),
+        ];
+        assert_eq!(pick_current(&sprints, day(10)), Some(2));
+    }
+
+    #[test]
+    fn without_a_running_sprint_the_open_one_ending_last_wins() {
+        let sprints = [
+            sprint(1, 1, 7, false),
+            sprint(2, 8, 14, false),
+            sprint(3, 2, 9, true),
+        ];
+        assert_eq!(pick_current(&sprints, day(20)), Some(2));
+    }
+
+    #[test]
+    fn closed_sprints_are_ignored_even_when_they_cover_today() {
+        let sprints = [sprint(1, 1, 30, true), sprint(2, 1, 5, false)];
+        assert_eq!(pick_current(&sprints, day(10)), Some(2));
+        assert_eq!(pick_current(&sprints[..1], day(10)), None);
+        assert_eq!(pick_current(&[], day(10)), None);
     }
 }

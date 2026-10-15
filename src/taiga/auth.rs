@@ -1,3 +1,5 @@
+//! Logging in and keeping the session tokens fresh.
+
 use reqwest::blocking::Client;
 use rpassword::read_password;
 use serde::{Deserialize, Serialize};
@@ -7,7 +9,7 @@ use super::request::check;
 use super::{Result, Taiga};
 
 #[derive(Serialize, Debug)]
-pub struct AuthRequest {
+struct AuthRequest {
     username: String,
     password: String,
     #[serde(rename = "type")]
@@ -15,10 +17,10 @@ pub struct AuthRequest {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct AuthResponse {
-    pub auth_token: String,
-    pub refresh: String,
-    pub id: i32,
+struct AuthResponse {
+    auth_token: String,
+    refresh: String,
+    id: i32,
 }
 
 #[derive(Deserialize, Debug)]
@@ -28,7 +30,7 @@ struct RefreshResponse {
 }
 
 impl Taiga {
-    pub fn request_credentials() -> Result<(String, String)> {
+    fn request_credentials() -> Result<(String, String)> {
         print!("Username: ");
         io::stdout().flush()?;
         let mut username = String::new();
@@ -41,6 +43,12 @@ impl Taiga {
         Ok((username.trim().to_string(), password))
     }
 
+    /// Asks for credentials, logs in and caches the new session and project list.
+    ///
+    /// The official server is used unless `url` names another one.
+    ///
+    /// # Errors
+    /// Returns an error when the terminal, the server or the cache fails.
     pub fn auth(url: Option<String>) -> Result<Self> {
         let (username, password) = Self::request_credentials()?;
         let base_url = url.unwrap_or("https://api.taiga.io/api/v1".to_string());
@@ -61,7 +69,11 @@ impl Taiga {
         Ok(taiga)
     }
 
-    pub fn refresh(&mut self) -> Result<()> {
+    /// Renews the tokens with the refresh token.
+    ///
+    /// # Errors
+    /// Returns an error when the refresh token is no longer accepted.
+    pub(super) fn refresh(&mut self) -> Result<()> {
         let response = Client::new()
             .post(format!("{}/auth/refresh", self.url))
             .json(&serde_json::json!({ "refresh": self.refresh }))
@@ -71,7 +83,11 @@ impl Taiga {
         self.set_tokens(tokens.auth_token, tokens.refresh)
     }
 
-    pub fn reauth(&mut self) -> Result<()> {
+    /// Logs in again with the stored credentials.
+    ///
+    /// # Errors
+    /// Returns an error when the credentials are no longer accepted.
+    pub(super) fn reauth(&mut self) -> Result<()> {
         let tokens = Self::login(&self.url, &self.username, &self.password)?;
         self.set_tokens(tokens.auth_token, tokens.refresh)
     }

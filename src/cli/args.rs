@@ -1,13 +1,13 @@
 //! The parsed command line: one argument struct per command.
 
 /// Arguments of `login`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct LoginArgs {
     pub address: Option<String>,
 }
 
 /// Arguments of `new`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct NewTaskArgs {
     pub project: String,
     pub status: Option<String>,
@@ -21,7 +21,7 @@ pub struct NewTaskArgs {
 }
 
 /// Arguments of `move`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct MoveTaskArgs {
     pub project: String,
     pub id: usize,
@@ -29,14 +29,14 @@ pub struct MoveTaskArgs {
 }
 
 /// Arguments of the commands that only name a task, `done` and `delete`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TaskArgs {
     pub project: String,
     pub id: usize,
 }
 
 /// Arguments of `rename`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RenameTaskArgs {
     pub project: String,
     pub id: usize,
@@ -44,7 +44,7 @@ pub struct RenameTaskArgs {
 }
 
 /// Arguments of `assign`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct AssignTaskArgs {
     pub project: String,
     pub id: usize,
@@ -53,7 +53,7 @@ pub struct AssignTaskArgs {
 }
 
 /// Arguments of `due`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DueTaskArgs {
     pub project: String,
     pub id: usize,
@@ -61,7 +61,7 @@ pub struct DueTaskArgs {
 }
 
 /// Arguments of `sprint`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SprintTaskArgs {
     pub project: String,
     pub id: usize,
@@ -69,7 +69,7 @@ pub struct SprintTaskArgs {
 }
 
 /// What `subtask` should do with the tasks under a user story.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SubtaskAction {
     New {
         name: String,
@@ -87,7 +87,7 @@ pub enum SubtaskAction {
 }
 
 /// Arguments of `subtask`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SubtaskArgs {
     pub project: String,
     pub story_id: usize,
@@ -95,7 +95,7 @@ pub struct SubtaskArgs {
 }
 
 /// Arguments of the commands that switch a task requirement, `team`, `client` and `block`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ToggleTaskArgs {
     pub project: String,
     pub id: usize,
@@ -103,7 +103,7 @@ pub struct ToggleTaskArgs {
 }
 
 /// Arguments of `modify`; `None` leaves a field untouched and `Some(None)` clears it.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ModifyTaskArgs {
     pub project: String,
     pub id: usize,
@@ -119,7 +119,7 @@ pub struct ModifyTaskArgs {
 }
 
 /// Arguments of `search`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SearchTaskArgs {
     pub project: String,
     pub include_statuses: Vec<String>,
@@ -136,20 +136,20 @@ pub struct SearchTaskArgs {
 }
 
 /// Arguments of `users`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ProjectUserArgs {
     pub project: String,
 }
 
 /// Arguments of `burndown`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ProjectBurndownArgs {
     pub project: String,
     pub sprint: Option<String>,
 }
 
 /// A fully parsed command.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TaigaCmd {
     Default,
     Login(LoginArgs),

@@ -1,3 +1,5 @@
+//! Client for the Taiga REST API and the cache of what it returned.
+
 use serde::{Deserialize, Serialize};
 
 pub mod auth;

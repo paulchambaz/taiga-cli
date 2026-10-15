@@ -1,9 +1,12 @@
+//! User stories: fetching, creating, updating and deleting them.
+
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{Result, Taiga};
 use crate::utils::slug;
 
+/// A user story, the card of the kanban.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaigaTask {
     pub id: i32,
@@ -15,7 +18,9 @@ pub struct TaigaTask {
     pub blocked: bool,
     pub assigned: Vec<i32>,
     pub due: Option<DateTime<Utc>>,
+    /// Whether its status counts as finished.
     pub closed: bool,
+    /// Taiga's edit counter, which updates must send back to avoid overwriting newer changes.
     pub version: i32,
     pub sprint_id: Option<i32>,
 }
@@ -81,6 +86,10 @@ pub struct TaskNew {
 }
 
 impl Taiga {
+    /// Lists the unarchived user stories of a project.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails.
     pub fn get_tasks(&mut self, id: i32) -> Result<Vec<TaigaTask>> {
         self.get::<Vec<UserStory>>(&format!(
             "/userstories?project={}&status__is_archived=false",
@@ -98,6 +107,10 @@ impl Taiga {
             .map(|t| TaigaTask::new(&t))
     }
 
+    /// Deletes a user story.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails.
     pub fn delete_task(&mut self, task_id: i32) -> Result<()> {
         self.delete(&format!("/userstories/{}", task_id))
     }
@@ -133,5 +146,117 @@ impl TaigaTask {
             version: t.version,
             sprint_id: t.milestone,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_patch_sends_only_what_is_set_and_always_the_version() {
+        let patch = TaskPatch {
+            status: Some(2),
+            version: 3,
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&patch).unwrap(),
+            json!({"status": 2, "version": 3})
+        );
+
+        let patch = TaskPatch {
+            subject: Some("renamed".to_string()),
+            assigned_users: Some(vec![1, 2]),
+            team_requirement: Some(false),
+            version: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&patch).unwrap(),
+            json!({
+                "subject": "renamed",
+                "assigned_users": [1, 2],
+                "team_requirement": false,
+                "version": 1
+            })
+        );
+    }
+
+    #[test]
+    fn a_patch_clears_the_due_date_and_sprint_with_null() {
+        let patch = TaskPatch {
+            due_date: Some(None),
+            milestone: Some(None),
+            version: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&patch).unwrap(),
+            json!({"due_date": null, "milestone": null, "version": 1})
+        );
+
+        let patch = TaskPatch {
+            due_date: Some(Some("2030-01-02".to_string())),
+            milestone: Some(Some(5)),
+            version: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&patch).unwrap(),
+            json!({"due_date": "2030-01-02", "milestone": 5, "version": 1})
+        );
+    }
+
+    fn story(overrides: serde_json::Value) -> UserStory {
+        let mut story = json!({
+            "id": 11,
+            "subject": "first story",
+            "status": 3,
+            "status_extra_info": {"name": "In progress"},
+            "team_requirement": true,
+            "client_requirement": false,
+            "is_blocked": false,
+            "assigned_users": [1, 2],
+            "due_date": "2030-01-02",
+            "is_closed": false,
+            "version": 4,
+            "milestone": 5
+        });
+        story
+            .as_object_mut()
+            .unwrap()
+            .extend(overrides.as_object().unwrap().clone());
+        serde_json::from_value(story).unwrap()
+    }
+
+    #[test]
+    fn a_story_maps_to_a_task() {
+        let task = TaigaTask::new(&story(json!({})));
+        assert_eq!(task.id, 11);
+        assert_eq!(task.name, "first story");
+        assert_eq!(task.status_id, 3);
+        assert_eq!(task.status, "in-progress");
+        assert!(task.team && !task.client && !task.blocked);
+        assert_eq!(task.assigned, [1, 2]);
+        assert_eq!(task.version, 4);
+        assert_eq!(task.sprint_id, Some(5));
+        assert!(!task.closed);
+        assert_eq!(task.due.unwrap().to_rfc3339(), "2030-01-02T00:00:00+00:00");
+    }
+
+    #[test]
+    fn closed_stories_are_closed_and_odd_dates_are_ignored() {
+        assert!(TaigaTask::new(&story(json!({"is_closed": true}))).closed);
+        assert!(TaigaTask::new(&story(json!({"due_date": null})))
+            .due
+            .is_none());
+        assert!(TaigaTask::new(&story(json!({"due_date": "soon"})))
+            .due
+            .is_none());
+        assert!(TaigaTask::new(&story(json!({"milestone": null})))
+            .sprint_id
+            .is_none());
     }
 }

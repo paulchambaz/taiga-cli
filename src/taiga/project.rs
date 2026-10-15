@@ -1,3 +1,5 @@
+//! Projects: their cached metadata and the lookups on it.
+
 use serde::{Deserialize, Serialize};
 
 use super::Error;
@@ -8,6 +10,7 @@ use super::TaigaStatus;
 use super::TaigaTask;
 use super::TaigaUser;
 
+/// A project with its cached metadata and the listing that task numbers refer to.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct TaigaProject {
     pub id: i32,
@@ -16,13 +19,14 @@ pub struct TaigaProject {
     pub statuses: Vec<TaigaStatus>,
     pub task_statuses: Vec<TaigaStatus>,
     pub sprints: Vec<TaigaSprint>,
+    /// The tasks of the last search, in the order they were printed.
     pub tasks: Vec<TaigaTask>,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ProjectsResponse {
-    pub id: i32,
-    pub name: String,
+struct ProjectsResponse {
+    id: i32,
+    name: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -54,6 +58,16 @@ struct MilestoneResponse {
     slug: String,
 }
 
+fn merge_projects(known: &mut Vec<TaigaProject>, fetched: Vec<TaigaProject>) {
+    known.retain(|project| fetched.iter().any(|f| f.id == project.id));
+    for project in fetched {
+        match known.iter_mut().find(|p| p.id == project.id) {
+            Some(cached) => cached.name = project.name,
+            None => known.push(project),
+        }
+    }
+}
+
 impl TaigaProject {
     /// Returns the task at a 1-based position in the last listing.
     ///
@@ -65,18 +79,27 @@ impl TaigaProject {
             .ok_or(Error::TaskNotFound(id))
     }
 
+    /// Finds a sprint by name or slug.
     pub fn find_sprint(&self, name: &str) -> Option<&TaigaSprint> {
         self.sprints
             .iter()
             .find(|s| s.slug == name || s.name == name)
     }
 
+    /// Finds the id of a sprint by name or slug.
+    ///
+    /// # Errors
+    /// Returns an error when the project has no such sprint.
     pub fn sprint_id(&self, name: &str) -> Result<i32> {
         self.find_sprint(name)
             .map(|s| s.id)
             .ok_or_else(|| Error::SprintNotFound(name.to_string()))
     }
 
+    /// Finds the id of a story status by slug.
+    ///
+    /// # Errors
+    /// Returns an error when the project has no such status.
     pub fn status_id(&self, slug: &str) -> Result<i32> {
         self.statuses
             .iter()
@@ -85,6 +108,10 @@ impl TaigaProject {
             .ok_or_else(|| Error::StatusNotFound(slug.to_string()))
     }
 
+    /// Finds the id of a member by username, where `"me"` means the logged-in user.
+    ///
+    /// # Errors
+    /// Returns an error when the project has no such member.
     pub fn member_id(&self, username: &str, me: i32) -> Result<i32> {
         self.members
             .iter()
@@ -101,6 +128,10 @@ impl TaigaProject {
 }
 
 impl Taiga {
+    /// Looks a cached project up by name.
+    ///
+    /// # Errors
+    /// Returns an error when no cached project has that name.
     pub fn find_project(&self, name: &str) -> Result<&TaigaProject> {
         self.projects
             .iter()
@@ -149,14 +180,7 @@ impl Taiga {
     /// Returns an error when the list cannot be fetched or the cache cannot be written.
     pub fn update_projects(&mut self) -> Result<()> {
         let fetched = self.get_projects()?;
-        self.projects
-            .retain(|p| fetched.iter().any(|f| f.id == p.id));
-        for project in fetched {
-            match self.projects.iter_mut().find(|p| p.id == project.id) {
-                Some(known) => known.name = project.name,
-                None => self.projects.push(project),
-            }
-        }
+        merge_projects(&mut self.projects, fetched);
         self.save_cache()
     }
 
@@ -216,5 +240,111 @@ impl Taiga {
                     })
                     .collect()
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn story(id: i32) -> TaigaTask {
+        TaigaTask {
+            id,
+            name: format!("story {id}"),
+            status_id: 10,
+            status: "new".to_string(),
+            team: false,
+            client: false,
+            blocked: false,
+            assigned: Vec::new(),
+            due: None,
+            closed: false,
+            version: 1,
+            sprint_id: None,
+        }
+    }
+
+    fn project() -> TaigaProject {
+        TaigaProject {
+            id: 7,
+            name: "demo".to_string(),
+            members: vec![
+                TaigaUser {
+                    id: 1,
+                    username: "paul".to_string(),
+                },
+                TaigaUser {
+                    id: 2,
+                    username: "arjun".to_string(),
+                },
+            ],
+            statuses: vec![TaigaStatus {
+                id: 10,
+                slug: "new".to_string(),
+                is_closed: false,
+            }],
+            sprints: vec![TaigaSprint {
+                id: 5,
+                name: "Sprint 1".to_string(),
+                slug: "sprint-1".to_string(),
+            }],
+            tasks: vec![story(100), story(200), story(300)],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn tasks_are_numbered_from_one_in_the_last_listing() {
+        let mut project = project();
+        assert_eq!(project.get_task(1).unwrap().id, 100);
+        assert_eq!(project.get_task(3).unwrap().id, 300);
+        assert!(matches!(project.get_task(0), Err(Error::TaskNotFound(0))));
+        assert!(matches!(project.get_task(4), Err(Error::TaskNotFound(4))));
+    }
+
+    #[test]
+    fn members_resolve_by_name_and_me_means_the_logged_in_user() {
+        let project = project();
+        assert_eq!(project.member_id("arjun", 1).unwrap(), 2);
+        assert_eq!(project.member_id("me", 1).unwrap(), 1);
+        assert_eq!(project.member_id("me", 2).unwrap(), 2);
+        assert!(matches!(
+            project.member_id("nobody", 1),
+            Err(Error::UserNotFound(name)) if name == "nobody"
+        ));
+        assert!(project.member_id("me", 99).is_err());
+    }
+
+    #[test]
+    fn statuses_and_sprints_resolve_by_their_names() {
+        let project = project();
+        assert_eq!(project.status_id("new").unwrap(), 10);
+        assert!(matches!(
+            project.status_id("missing"),
+            Err(Error::StatusNotFound(_))
+        ));
+        assert_eq!(project.sprint_id("Sprint 1").unwrap(), 5);
+        assert_eq!(project.sprint_id("sprint-1").unwrap(), 5);
+        assert!(matches!(
+            project.sprint_id("sprint 1"),
+            Err(Error::SprintNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn merging_keeps_cached_data_renames_adds_and_drops() {
+        let named = |id, name: &str| TaigaProject {
+            id,
+            name: name.to_string(),
+            ..Default::default()
+        };
+        let mut known = vec![project(), named(8, "gone")];
+        merge_projects(&mut known, vec![named(7, "renamed"), named(9, "added")]);
+
+        let names: Vec<&str> = known.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["renamed", "added"]);
+        assert_eq!(known[0].tasks.len(), 3);
+        assert_eq!(known[0].members.len(), 2);
+        assert!(known[1].members.is_empty());
     }
 }

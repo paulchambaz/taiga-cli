@@ -1,3 +1,5 @@
+//! Tasks nested under user stories.
+
 use serde::{Deserialize, Serialize};
 use std::panic::resume_unwind;
 use std::thread;
@@ -5,6 +7,7 @@ use std::thread;
 use super::{Result, Taiga};
 use crate::utils::slug;
 
+/// A task nested under a user story.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaigaSubtask {
     pub id: i32,
@@ -52,6 +55,10 @@ struct SubtaskDescribeRequest {
 }
 
 impl Taiga {
+    /// Lists the subtasks of a story, without their descriptions.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails.
     pub fn get_subtasks(
         &mut self,
         project_id: i32,
@@ -100,6 +107,10 @@ impl Taiga {
         })
     }
 
+    /// Creates a subtask under a story.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails.
     pub fn new_subtask(
         &mut self,
         project_id: i32,
@@ -123,6 +134,10 @@ impl Taiga {
         .map(|t| TaigaSubtask::new(&t))
     }
 
+    /// Replaces the description of a subtask.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails, for example on a version conflict.
     pub fn describe_subtask(
         &mut self,
         id: i32,
@@ -139,6 +154,10 @@ impl Taiga {
         .map(|t| TaigaSubtask::new(&t))
     }
 
+    /// Deletes a subtask.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails.
     pub fn delete_subtask(&mut self, id: i32) -> Result<()> {
         self.delete(&format!("/tasks/{}", id)).map(|_| ())
     }

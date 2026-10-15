@@ -1,3 +1,5 @@
+//! A command line client for taiga.io, inspired by taskwarrior.
+
 mod cli;
 mod commands;
 mod taiga;

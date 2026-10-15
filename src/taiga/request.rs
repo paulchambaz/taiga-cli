@@ -1,9 +1,15 @@
+//! Authenticated requests to the Taiga API, with one retry after the session expires.
+
 use reqwest::blocking::{Client, Response};
 use reqwest::{Method, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::{Error, Result, Taiga};
 
+/// Turns an unsuccessful answer into an error carrying the server's own explanation.
+///
+/// # Errors
+/// Returns an error when the status is not a success.
 pub(super) fn check(response: Response) -> Result<Response> {
     if response.status().is_success() {
         return Ok(response);
@@ -58,6 +64,10 @@ impl Taiga {
         Ok(check(self.attempt::<()>(&Method::GET, endpoint, None)?)?.json()?)
     }
 
+    /// Fetches and decodes a resource, renewing the session once if it expired.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails or the answer cannot be decoded.
     pub fn get<R>(&mut self, endpoint: &str) -> Result<R>
     where
         R: DeserializeOwned,
@@ -65,6 +75,10 @@ impl Taiga {
         Ok(self.send::<()>(Method::GET, endpoint, None)?.json()?)
     }
 
+    /// Creates a resource and decodes the answer.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails or the answer cannot be decoded.
     pub fn post<T, R>(&mut self, endpoint: &str, body: &T) -> Result<R>
     where
         T: Serialize + ?Sized,
@@ -73,6 +87,10 @@ impl Taiga {
         Ok(self.send(Method::POST, endpoint, Some(body))?.json()?)
     }
 
+    /// Updates a resource and decodes the answer.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails or the answer cannot be decoded.
     pub fn patch<T, R>(&mut self, endpoint: &str, body: &T) -> Result<R>
     where
         T: Serialize + ?Sized,
@@ -81,6 +99,10 @@ impl Taiga {
         Ok(self.send(Method::PATCH, endpoint, Some(body))?.json()?)
     }
 
+    /// Deletes a resource.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails.
     pub fn delete(&mut self, endpoint: &str) -> Result<()> {
         self.send::<()>(Method::DELETE, endpoint, None).map(|_| ())
     }
