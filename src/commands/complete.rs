@@ -1,5 +1,7 @@
 //! The hidden `complete` command: cached names for shell completion.
 
+use std::borrow::Cow;
+
 use crate::cli::{Candidates, CompleteArgs};
 use crate::taiga::{Taiga, TaigaProject};
 
@@ -14,9 +16,12 @@ pub fn complete(taiga: Option<&Taiga>, args: &CompleteArgs) {
     }
 }
 
-fn names(projects: &[TaigaProject], args: &CompleteArgs) -> Vec<String> {
+fn names<'a>(projects: &'a [TaigaProject], args: &CompleteArgs) -> Vec<Cow<'a, str>> {
     if args.candidates == Candidates::Projects {
-        return projects.iter().map(|p| p.name.clone()).collect();
+        return projects
+            .iter()
+            .map(|p| Cow::Borrowed(p.name.as_str()))
+            .collect();
     }
 
     let Some(project) = projects
@@ -27,14 +32,26 @@ fn names(projects: &[TaigaProject], args: &CompleteArgs) -> Vec<String> {
     };
 
     match args.candidates {
-        Candidates::Statuses => project.statuses.iter().map(|s| s.slug.clone()).collect(),
-        Candidates::Members => project.members.iter().map(|m| m.username.clone()).collect(),
-        Candidates::Sprints => project.sprints.iter().map(|s| s.slug.clone()).collect(),
+        Candidates::Statuses => project
+            .statuses
+            .iter()
+            .map(|s| Cow::Borrowed(s.slug.as_str()))
+            .collect(),
+        Candidates::Members => project
+            .members
+            .iter()
+            .map(|m| Cow::Borrowed(m.username.as_str()))
+            .collect(),
+        Candidates::Sprints => project
+            .sprints
+            .iter()
+            .map(|s| Cow::Borrowed(s.slug.as_str()))
+            .collect(),
         Candidates::Tasks => project
             .tasks
             .iter()
             .enumerate()
-            .map(|(i, task)| format!("{}:{}", i + 1, task.name))
+            .map(|(i, task)| Cow::Owned(format!("{}:{}", i + 1, task.name)))
             .collect(),
         Candidates::Projects => Vec::new(),
     }

@@ -49,9 +49,13 @@ pub fn modify(taiga: &mut Taiga, args: ModifyTaskArgs) -> Result<()> {
 
     edit(taiga, project, args.id, |task| {
         let assigned = (!added.is_empty() || !removed.is_empty()).then(|| {
-            let mut users = task.assigned.clone();
-            users.extend(&added);
-            users.retain(|user| !removed.contains(user));
+            let mut users: Vec<_> = task
+                .assigned
+                .iter()
+                .chain(&added)
+                .filter(|user| !removed.contains(user))
+                .copied()
+                .collect();
             users.sort();
             users.dedup();
             users

@@ -1,5 +1,6 @@
 //! The `search` command and the formatting of its listing.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 
 use anyhow::Result;
@@ -159,11 +160,10 @@ pub fn search(taiga: &mut Taiga, args: SearchTaskArgs) -> Result<()> {
             .assigned
             .iter()
             .map(|id| {
-                project
-                    .members
-                    .iter()
-                    .find(|m| m.id == *id)
-                    .map_or_else(|| id.to_string(), |m| m.username.clone())
+                project.members.iter().find(|m| m.id == *id).map_or_else(
+                    || Cow::Owned(id.to_string()),
+                    |m| Cow::Borrowed(m.username.as_str()),
+                )
             })
             .collect::<Vec<_>>()
             .join(", ");

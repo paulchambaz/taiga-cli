@@ -68,7 +68,7 @@ impl Taiga {
             "/tasks?project={}&user_story={}",
             project_id, user_story_id
         ))
-        .map(|ts| ts.iter().map(TaigaSubtask::new).collect())
+        .map(|ts| ts.into_iter().map(TaigaSubtask::new).collect())
     }
 
     /// Lists the subtasks of a story with their descriptions, which only the detail view has.
@@ -101,7 +101,7 @@ impl Taiga {
                     request
                         .join()
                         .unwrap_or_else(|panic| resume_unwind(panic))
-                        .map(|t| TaigaSubtask::new(&t))
+                        .map(TaigaSubtask::new)
                 })
                 .collect()
         })
@@ -131,7 +131,7 @@ impl Taiga {
                 assigned_to: assign,
             },
         )
-        .map(|t| TaigaSubtask::new(&t))
+        .map(TaigaSubtask::new)
     }
 
     /// Replaces the description of a subtask.
@@ -151,7 +151,7 @@ impl Taiga {
                 version,
             },
         )
-        .map(|t| TaigaSubtask::new(&t))
+        .map(TaigaSubtask::new)
     }
 
     /// Deletes a subtask.
@@ -164,13 +164,13 @@ impl Taiga {
 }
 
 impl TaigaSubtask {
-    fn new(t: &TaskResponse) -> TaigaSubtask {
+    fn new(t: TaskResponse) -> TaigaSubtask {
         TaigaSubtask {
             id: t.id,
-            name: t.subject.clone(),
-            description: t.description.clone(),
+            name: t.subject,
+            description: t.description,
             status_id: t.status,
-            status: slug(t.status_extra_info.name.clone()),
+            status: slug(t.status_extra_info.name),
             assigned: t.assigned_to,
             closed: t.is_closed,
             version: t.version,

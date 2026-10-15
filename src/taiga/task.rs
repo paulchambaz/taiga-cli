@@ -108,7 +108,7 @@ impl Taiga {
             "/userstories?project={}&status__is_archived=false",
             id
         ))
-        .map(|ts| ts.iter().map(TaigaTask::new).collect())
+        .map(|ts| ts.into_iter().map(TaigaTask::new).collect())
     }
 
     /// Applies a partial update to a user story.
@@ -117,7 +117,7 @@ impl Taiga {
     /// Returns an error when the request fails, for example on a version conflict.
     pub fn patch_task(&mut self, task_id: i32, patch: &TaskPatch) -> Result<TaigaTask> {
         self.patch::<TaskPatch, UserStory>(&format!("/userstories/{task_id}"), patch)
-            .map(|t| TaigaTask::new(&t))
+            .map(TaigaTask::new)
     }
 
     /// Deletes a user story.
@@ -134,21 +134,21 @@ impl Taiga {
     /// Returns an error when the request fails.
     pub fn new_task(&mut self, task: &TaskNew) -> Result<TaigaTask> {
         self.post::<TaskNew, UserStory>("/userstories", task)
-            .map(|t| TaigaTask::new(&t))
+            .map(TaigaTask::new)
     }
 }
 
 impl TaigaTask {
-    fn new(t: &UserStory) -> TaigaTask {
+    fn new(t: UserStory) -> TaigaTask {
         TaigaTask {
             id: t.id,
-            name: t.subject.clone(),
+            name: t.subject,
             status_id: t.status,
-            status: slug(t.status_extra_info.name.clone()),
+            status: slug(t.status_extra_info.name),
             team: t.team_requirement,
             client: t.client_requirement,
             blocked: t.is_blocked,
-            assigned: t.assigned_users.clone(),
+            assigned: t.assigned_users,
             due: t
                 .due_date
                 .as_ref()
@@ -237,16 +237,15 @@ mod tests {
             "version": 4,
             "milestone": 5
         });
-        story
-            .as_object_mut()
-            .unwrap()
-            .extend(overrides.as_object().unwrap().clone());
+        if let serde_json::Value::Object(fields) = overrides {
+            story.as_object_mut().unwrap().extend(fields);
+        }
         serde_json::from_value(story).unwrap()
     }
 
     #[test]
     fn a_story_maps_to_a_task() {
-        let task = TaigaTask::new(&story(json!({})));
+        let task = TaigaTask::new(story(json!({})));
         assert_eq!(task.id, 11);
         assert_eq!(task.name, "first story");
         assert_eq!(task.status_id, 3);
@@ -261,14 +260,14 @@ mod tests {
 
     #[test]
     fn closed_stories_are_closed_and_odd_dates_are_ignored() {
-        assert!(TaigaTask::new(&story(json!({"is_closed": true}))).closed);
-        assert!(TaigaTask::new(&story(json!({"due_date": null})))
+        assert!(TaigaTask::new(story(json!({"is_closed": true}))).closed);
+        assert!(TaigaTask::new(story(json!({"due_date": null})))
             .due
             .is_none());
-        assert!(TaigaTask::new(&story(json!({"due_date": "soon"})))
+        assert!(TaigaTask::new(story(json!({"due_date": "soon"})))
             .due
             .is_none());
-        assert!(TaigaTask::new(&story(json!({"milestone": null})))
+        assert!(TaigaTask::new(story(json!({"milestone": null})))
             .sprint_id
             .is_none());
     }

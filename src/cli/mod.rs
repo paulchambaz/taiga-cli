@@ -356,15 +356,20 @@ mod tests {
 
     #[test]
     fn the_id_comes_before_or_after_the_verb() {
-        let rest = strings(&["x"]);
         let split = |words: &[&str]| {
             let words = strings(words);
             split_task_command(&words).map(|(verb, id, rest)| (verb, id, rest.to_vec()))
         };
         assert_eq!(split(&["done", "3"]), Some(("done", 3, vec![])));
         assert_eq!(split(&["3", "done"]), Some(("done", 3, vec![])));
-        assert_eq!(split(&["mod", "3", "x"]), Some(("modify", 3, rest.clone())));
-        assert_eq!(split(&["3", "del", "x"]), Some(("delete", 3, rest)));
+        assert_eq!(
+            split(&["mod", "3", "x"]),
+            Some(("modify", 3, strings(&["x"])))
+        );
+        assert_eq!(
+            split(&["3", "del", "x"]),
+            Some(("delete", 3, strings(&["x"])))
+        );
     }
 
     #[test]

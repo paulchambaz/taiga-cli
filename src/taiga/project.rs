@@ -150,15 +150,16 @@ impl Taiga {
         name: &str,
         stale: impl FnOnce(&TaigaProject) -> bool,
     ) -> Result<TaigaProject> {
-        let project = self.find_project(name)?.clone();
-        if !project.statuses.is_empty() && !stale(&project) {
-            return Ok(project);
+        let cached = self.find_project(name)?;
+        if !cached.statuses.is_empty() && !stale(cached) {
+            return Ok(cached.clone());
         }
 
-        let project = TaigaProject {
-            tasks: project.tasks,
-            ..self.get_project(project.id)?
-        };
+        let id = cached.id;
+        let mut project = self.get_project(id)?;
+        if let Some(known) = self.projects.iter_mut().find(|p| p.id == id) {
+            project.tasks = std::mem::take(&mut known.tasks);
+        }
         self.save_project(project.clone())?;
         Ok(project)
     }
@@ -200,12 +201,12 @@ impl Taiga {
     fn get_project(&mut self, id: i32) -> Result<TaigaProject> {
         let p = self.get::<ProjectResponse>(&format!("/projects/{}", id))?;
         let sprints = self.get_milestones(id)?;
-        let to_statuses = |statuses: &[Status]| -> Vec<TaigaStatus> {
+        let to_statuses = |statuses: Vec<Status>| -> Vec<TaigaStatus> {
             statuses
-                .iter()
+                .into_iter()
                 .map(|status| TaigaStatus {
                     id: status.id,
-                    slug: status.slug.clone(),
+                    slug: status.slug,
                     is_closed: status.is_closed,
                 })
                 .collect()
@@ -213,17 +214,17 @@ impl Taiga {
 
         Ok(TaigaProject {
             id: p.id,
-            name: p.name.clone(),
+            name: p.name,
             members: p
                 .members
-                .iter()
+                .into_iter()
                 .map(|member| TaigaUser {
                     id: member.id,
-                    username: member.username.clone(),
+                    username: member.username,
                 })
                 .collect(),
-            statuses: to_statuses(&p.us_statuses),
-            task_statuses: to_statuses(&p.task_statuses),
+            statuses: to_statuses(p.us_statuses),
+            task_statuses: to_statuses(p.task_statuses),
             sprints,
             tasks: Vec::new(),
         })
@@ -232,11 +233,11 @@ impl Taiga {
     fn get_milestones(&mut self, project_id: i32) -> Result<Vec<TaigaSprint>> {
         self.get::<Vec<MilestoneResponse>>(&format!("/milestones?project={}", project_id))
             .map(|ms| {
-                ms.iter()
+                ms.into_iter()
                     .map(|m| TaigaSprint {
                         id: m.id,
-                        name: m.name.clone(),
-                        slug: m.slug.clone(),
+                        name: m.name,
+                        slug: m.slug,
                     })
                     .collect()
             })

@@ -22,7 +22,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("could not serialize the cache: {0}")]
-    Cache(#[from] bincode::Error),
+    Cache(#[from] bincode::error::EncodeError),
     #[error("could not find a cache directory")]
     NoCacheDir,
     #[error("project '{0}' not found")]

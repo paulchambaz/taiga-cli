@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use super::{Error, Result, Taiga};
 
 /// Layout version of the cache file, to bump whenever `Taiga` changes.
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 2;
 
 fn cache_path() -> Result<PathBuf> {
     ProjectDirs::from("", "", "taiga")
@@ -41,12 +41,16 @@ impl Taiga {
         }
 
         let bytes = fs::read(path)?;
-        if bincode::deserialize::<u32>(&bytes).ok() != Some(CACHE_VERSION) {
+        let config = bincode::config::standard();
+        let version = bincode::serde::decode_from_slice::<u32, _>(&bytes, config);
+        if version.ok().map(|(version, _)| version) != Some(CACHE_VERSION) {
             return Ok(None);
         }
-        Ok(bincode::deserialize::<(u32, Self)>(&bytes)
-            .ok()
-            .map(|(_, taiga)| taiga))
+        Ok(
+            bincode::serde::decode_from_slice::<(u32, Self), _>(&bytes, config)
+                .ok()
+                .map(|((_, taiga), _)| taiga),
+        )
     }
 
     fn write_to(&self, path: &Path) -> Result<()> {
@@ -62,7 +66,10 @@ impl Taiga {
 
         options
             .open(&tmp)?
-            .write_all(&bincode::serialize(&(CACHE_VERSION, self))?)?;
+            .write_all(&bincode::serde::encode_to_vec(
+                (CACHE_VERSION, self),
+                bincode::config::standard(),
+            )?)?;
         fs::rename(tmp, path)?;
         Ok(())
     }
@@ -136,7 +143,7 @@ mod tests {
         session().write_to(&dir.cache()).unwrap();
         let valid = fs::read(dir.cache()).unwrap();
 
-        let mut other_version = valid.clone();
+        let mut other_version = fs::read(dir.cache()).unwrap();
         other_version[0] = other_version[0].wrapping_add(1);
 
         let cases = [
