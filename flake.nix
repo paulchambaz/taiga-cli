@@ -47,6 +47,13 @@
           install -Dm644 completions/taiga.bash $out/share/bash-completion/completions/taiga
           install -Dm644 completions/taiga.fish $out/share/fish/vendor_completions.d/taiga.fish
         '';
+
+        meta = {
+          description = "Cli tool for taiga.io inspired by taskwarrior";
+          homepage = "https://github.com/paulchambaz/taiga-cli";
+          license = pkgs.lib.licenses.gpl3Only;
+          mainProgram = "taiga";
+        };
       };
 
       devShells.default = pkgs.mkShell {
