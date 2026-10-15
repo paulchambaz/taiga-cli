@@ -18,6 +18,10 @@ fn main() -> Result<()> {
             Taiga::auth(args.address)?;
             Ok(())
         }
+        TaigaCmd::Complete(args) => {
+            commands::complete(cached.as_ref(), &args);
+            Ok(())
+        }
         cmd => commands::run(cmd, cached.ok_or(Error::NotLoggedIn)?),
     }
 }

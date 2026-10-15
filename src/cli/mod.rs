@@ -36,6 +36,7 @@ pub fn parse_args(taiga: Option<&Taiga>) -> TaigaCmd {
         "projects" => finish("", "projects", None, rest, || {
             rest.is_empty().then_some(TaigaCmd::Projects)
         }),
+        "complete" => parse_complete(rest).unwrap_or_else(|| exit(1)),
         "--help" => {
             top_help(&projects).display();
             exit(0);
@@ -68,6 +69,27 @@ fn finish(
         help_message(project, verb, id).display();
         exit(1);
     })
+}
+
+fn parse_complete(args: &[String]) -> Option<TaigaCmd> {
+    let (candidates, project) = match args {
+        [what] if what == "projects" => (Candidates::Projects, None),
+        [what, project] => {
+            let candidates = match what.as_str() {
+                "statuses" => Candidates::Statuses,
+                "members" => Candidates::Members,
+                "sprints" => Candidates::Sprints,
+                "tasks" => Candidates::Tasks,
+                _ => return None,
+            };
+            (candidates, Some(project.clone()))
+        }
+        _ => return None,
+    };
+    Some(TaigaCmd::Complete(CompleteArgs {
+        candidates,
+        project,
+    }))
 }
 
 fn parse_project(project: &str, args: &[String]) -> TaigaCmd {

@@ -43,6 +43,9 @@
         postInstall = ''
           mkdir -p $out/share/man/man1
           scdoc < taiga.1.scd > $out/share/man/man1/taiga.1
+          install -Dm644 completions/_taiga $out/share/zsh/site-functions/_taiga
+          install -Dm644 completions/taiga.bash $out/share/bash-completion/completions/taiga
+          install -Dm644 completions/taiga.fish $out/share/fish/vendor_completions.d/taiga.fish
         '';
       };
 

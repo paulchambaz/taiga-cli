@@ -1,0 +1,92 @@
+#compdef taiga
+
+_taiga() {
+  local -a verbs rest lines projects
+  local project id verb cur=$words[CURRENT] w
+
+  verbs=(new move done rename assign due sprint subtask team client block modify delete search users burndown)
+
+  if (( CURRENT == 2 )); then
+    projects=(${(f)"$(taiga complete projects 2>/dev/null)"})
+    compadd -- $projects login projects --help --version
+    return
+  fi
+
+  project=$words[2]
+  projects=(${(f)"$(taiga complete projects 2>/dev/null)"})
+  (( ${projects[(Ie)$project]} )) || return
+  rest=(${words[3,CURRENT-1]})
+
+  for w in $rest; do
+    if [[ -z $id && $w == <-> ]]; then
+      id=$w
+    elif [[ -z $verb && ${verbs[(Ie)$w]} -gt 0 ]]; then
+      verb=$w
+    fi
+  done
+
+  local -a tasks
+  tasks=(${(f)"$(taiga complete tasks $project 2>/dev/null)"})
+
+  if [[ -z $verb ]]; then
+    compadd -a verbs
+    [[ -z $id ]] && _describe -t tasks task tasks
+    return
+  fi
+
+  case $verb in
+    move)
+      [[ -z $id ]] && _describe -t tasks task tasks
+      compadd -- ${(f)"$(taiga complete statuses $project 2>/dev/null)"}
+      ;;
+    assign)
+      [[ -z $id ]] && _describe -t tasks task tasks
+      compadd -- ${(f)"$(taiga complete members $project 2>/dev/null)"}
+      compadd -- --remove
+      ;;
+    sprint)
+      [[ -z $id ]] && _describe -t tasks task tasks
+      compadd -- ${(f)"$(taiga complete sprints $project 2>/dev/null)"}
+      compadd -- --remove
+      ;;
+    due|team|client|block)
+      [[ -z $id ]] && _describe -t tasks task tasks
+      compadd -- --remove
+      ;;
+    done|delete|rename)
+      [[ -z $id ]] && _describe -t tasks task tasks
+      ;;
+    subtask)
+      [[ -z $id ]] && _describe -t tasks task tasks
+      compadd -- new list describe delete
+      ;;
+    burndown)
+      compadd -- ${(f)"$(taiga complete sprints $project 2>/dev/null)"}
+      ;;
+    new|modify|search)
+      [[ $verb == modify && -z $id ]] && _describe -t tasks task tasks
+      _taiga_modifiers
+      ;;
+  esac
+}
+
+_taiga_modifiers() {
+  local statuses members sprints
+  statuses=(${(f)"$(taiga complete statuses $project 2>/dev/null)"})
+  members=(${(f)"$(taiga complete members $project 2>/dev/null)"})
+  sprints=(${(f)"$(taiga complete sprints $project 2>/dev/null)"})
+
+  if compset -P 'status:'; then compadd -a statuses
+  elif compset -P '-status:'; then compadd -a statuses
+  elif compset -P 'sprint:'; then compadd -a sprints
+  elif compset -P '-sprint:'; then compadd -a sprints
+  elif compset -P '-@'; then compadd -a members
+  elif compset -P '@'; then compadd -a members
+  else
+    compadd -S '' -- status: sprint: due: @ +team +client +block
+    [[ $verb == search ]] && compadd -S '' -- -status: -sprint: -@ -team -client -block
+    [[ $verb == modify ]] && compadd -S '' -- -@ -due -sprint -team -client -block
+  fi
+}
+
+_taiga "$@"

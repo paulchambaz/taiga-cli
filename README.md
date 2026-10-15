@@ -40,6 +40,8 @@ yay -S taiga-cli
 
 To understand how to use this program, it is recommended to read the [`man`](./taiga.1.scd) page. All instructions are detailed there.
 
+Shell completion for zsh, bash and fish lives in `completions/`. It completes projects, task numbers, statuses, sprints, members and modifiers from the cache, so it follows your projects. `just install` puts each file where its shell looks (`~/.local/share/zsh/site-functions` needs to be in zsh's `fpath` before `compinit`; bash-completion and fish pick theirs up on their own). With `cargo install`, copy the files yourself.
+
 Here is a brief overview of the program :
 
 ```sh

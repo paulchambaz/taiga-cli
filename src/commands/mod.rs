@@ -1,6 +1,7 @@
 //! The commands, one module per command or group of closely related commands.
 
 mod burndown;
+mod complete;
 mod edit;
 mod modify;
 mod new;
@@ -9,6 +10,8 @@ mod search;
 mod subtask;
 
 use anyhow::Result;
+
+pub use self::complete::complete;
 
 use crate::cli::TaigaCmd;
 use crate::taiga::{Taiga, TaigaProject, TaigaTask, TaskPatch};
@@ -37,7 +40,7 @@ pub fn run(cmd: TaigaCmd, mut taiga: Taiga) -> Result<()> {
         TaigaCmd::SearchTask(args) => search::search(&mut taiga, args)?,
         TaigaCmd::Subtask(args) => subtask::subtask(&mut taiga, args)?,
         TaigaCmd::ProjectBurndown(args) => burndown::burndown(&mut taiga, args)?,
-        TaigaCmd::Login(_) => {}
+        TaigaCmd::Login(_) | TaigaCmd::Complete(_) => {}
     }
     Ok(())
 }

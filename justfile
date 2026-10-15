@@ -28,6 +28,9 @@ man:
 install prefix=(env_var('HOME') + '/.local'): build man
   install -Dm755 target/release/taiga {{ prefix }}/bin/taiga
   install -Dm644 taiga.1 {{ prefix }}/share/man/man1/taiga.1
+  install -Dm644 completions/_taiga {{ prefix }}/share/zsh/site-functions/_taiga
+  install -Dm644 completions/taiga.bash {{ prefix }}/share/bash-completion/completions/taiga
+  install -Dm644 completions/taiga.fish {{ prefix }}/share/fish/vendor_completions.d/taiga.fish
 
 vhs:
   vhs demo.tape

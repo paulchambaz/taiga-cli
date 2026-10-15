@@ -148,12 +148,30 @@ pub struct ProjectBurndownArgs {
     pub sprint: Option<String>,
 }
 
+/// What `complete` lists for the shell.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Candidates {
+    Projects,
+    Statuses,
+    Members,
+    Sprints,
+    Tasks,
+}
+
+/// Arguments of `complete`.
+#[derive(Debug, PartialEq)]
+pub struct CompleteArgs {
+    pub candidates: Candidates,
+    pub project: Option<String>,
+}
+
 /// A fully parsed command.
 #[derive(Debug, PartialEq)]
 pub enum TaigaCmd {
     Default,
     Login(LoginArgs),
     Projects,
+    Complete(CompleteArgs),
     NewTask(NewTaskArgs),
     MoveTask(MoveTaskArgs),
     DoneTask(TaskArgs),
