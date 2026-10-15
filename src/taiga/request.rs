@@ -41,6 +41,36 @@ impl Taiga {
         }
     }
 
+    // Same retry/auth flow as `request`, but for responses with no body to
+    // parse (e.g. a 204 from DELETE) - `request` would fail to `.json()` an
+    // empty body even on a successful request.
+    fn request_no_content(&mut self, mut builder: RequestBuilder) -> Result<()> {
+        let mut response = self.execute_request::<()>(builder.try_clone().unwrap(), None)?;
+
+        if response.status().is_success() {
+            return Ok(());
+        }
+
+        if let Ok(()) = self.refresh() {
+            builder = self.add_auth_header(builder.try_clone().unwrap())?;
+            response = self.execute_request::<()>(builder.try_clone().unwrap(), None)?;
+
+            if response.status().is_success() {
+                return Ok(());
+            }
+        }
+
+        self.reauth()?;
+        builder = self.add_auth_header(builder.try_clone().unwrap())?;
+        response = self.execute_request::<()>(builder, None)?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(anyhow!("Request failed after all retry attempts"))
+        }
+    }
+
     // Helper to execute a single request attempt
     fn execute_request<T>(&self, builder: RequestBuilder, body: Option<&T>) -> Result<Response>
     where
@@ -112,6 +142,6 @@ impl Taiga {
             .header(CONTENT_TYPE, "application/json");
         let builder = self.add_auth_header(builder)?;
 
-        self.request::<(), ()>(builder, None)
+        self.request_no_content(builder)
     }
 }
