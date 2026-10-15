@@ -1,11 +1,13 @@
-use anyhow::{anyhow, Result};
 use reqwest::blocking::Client;
-use reqwest::header::CONTENT_TYPE;
 use rpassword::read_password;
 use serde::{Deserialize, Serialize};
 use std::io::{self, stdin, Write};
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
+
+use super::request::check;
+use super::taiga::Taiga;
+use super::Result;
 
 #[derive(Serialize, Debug)]
 pub struct AuthRequest {
@@ -22,46 +24,31 @@ pub struct AuthResponse {
     pub id: i32,
 }
 
-use super::taiga::Taiga;
+#[derive(Deserialize, Debug)]
+struct RefreshResponse {
+    auth_token: String,
+    refresh: String,
+}
 
 impl Taiga {
-    pub fn request_credentials() -> (String, String) {
+    pub fn request_credentials() -> Result<(String, String)> {
         print!("Username: ");
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
         let mut username = String::new();
-        stdin().read_line(&mut username).unwrap();
+        stdin().read_line(&mut username)?;
 
         print!("Password: ");
-        io::stdout().flush().unwrap();
-        let password = read_password().unwrap();
+        io::stdout().flush()?;
+        let password = read_password()?;
 
-        (username.trim().to_string(), password)
+        Ok((username.trim().to_string(), password))
     }
 
     pub fn auth(url: Option<String>) -> Result<Self> {
-        let (username, password) = Self::request_credentials();
+        let (username, password) = Self::request_credentials()?;
         let base_url = url.unwrap_or("https://api.taiga.io/api/v1".to_string());
 
-        let client = Client::new();
-        let auth_request = AuthRequest {
-            username: username.clone(),
-            password: password.clone(),
-            auth_type: "normal".to_string(),
-        };
-
-        let response = client
-            .post(format!("{}/auth", base_url))
-            .header(CONTENT_TYPE, "application/json")
-            .json(&auth_request)
-            .send()?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!(
-                "Authentication failed. Please check your credentials."
-            ));
-        }
-
-        let auth_response: AuthResponse = response.json()?;
+        let auth_response = Self::login(&base_url, &username, &password)?;
 
         let mut taiga = Taiga {
             auth_token: auth_response.auth_token,
@@ -74,73 +61,45 @@ impl Taiga {
             projects: vec![],
         };
 
-        match taiga.get_projects() {
-            Ok(fetched_projects) => {
-                taiga.projects = fetched_projects;
-            }
-            Err(e) => {
-                return Err(anyhow!(
-                    "Authentication successful but failed to fetch projects: {}",
-                    e
-                ));
-            }
-        }
-
+        taiga.projects = taiga.get_projects()?;
         taiga.save_cache()?;
         Ok(taiga)
     }
 
     pub fn refresh(&mut self) -> Result<()> {
-        let client = Client::new();
-        let refresh_request = serde_json::json!({
-            "refresh": self.refresh
-        });
-
-        let response = client
+        let response = Client::new()
             .post(format!("{}/auth/refresh", self.url))
-            .header(CONTENT_TYPE, "application/json")
-            .json(&refresh_request)
+            .json(&serde_json::json!({ "refresh": self.refresh }))
             .send()?;
 
-        if !response.status().is_success() {
-            return Err(anyhow!("Failed to refresh token"));
-        }
-
-        let refresh_response: AuthResponse = response.json()?;
-
-        self.auth_token = refresh_response.auth_token;
-        self.refresh = refresh_response.refresh;
-        self.refresh_time = SystemTime::now().add(Duration::from_secs(24 * 60 * 60));
-
-        self.save_cache()?;
-        Ok(())
+        let tokens: RefreshResponse = check(response)?.json()?;
+        self.set_tokens(tokens.auth_token, tokens.refresh)
     }
 
     pub fn reauth(&mut self) -> Result<()> {
-        let client = Client::new();
-        let auth_request = AuthRequest {
-            username: self.username.clone(),
-            password: self.password.clone(),
+        let tokens = Self::login(&self.url, &self.username, &self.password)?;
+        self.set_tokens(tokens.auth_token, tokens.refresh)
+    }
+
+    fn login(url: &str, username: &str, password: &str) -> Result<AuthResponse> {
+        let request = AuthRequest {
+            username: username.to_string(),
+            password: password.to_string(),
             auth_type: "normal".to_string(),
         };
 
-        let response = client
-            .post(format!("{}/auth", self.url))
-            .header(CONTENT_TYPE, "application/json")
-            .json(&auth_request)
+        let response = Client::new()
+            .post(format!("{url}/auth"))
+            .json(&request)
             .send()?;
 
-        if !response.status().is_success() {
-            return Err(anyhow!("Reauthorization failed"));
-        }
+        Ok(check(response)?.json()?)
+    }
 
-        let auth_response: AuthResponse = response.json()?;
-
-        self.auth_token = auth_response.auth_token;
-        self.refresh = auth_response.refresh;
+    fn set_tokens(&mut self, auth_token: String, refresh: String) -> Result<()> {
+        self.auth_token = auth_token;
+        self.refresh = refresh;
         self.refresh_time = SystemTime::now().add(Duration::from_secs(24 * 60 * 60));
-
-        self.save_cache()?;
-        Ok(())
+        self.save_cache()
     }
 }

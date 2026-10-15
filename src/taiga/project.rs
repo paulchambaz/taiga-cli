@@ -1,7 +1,7 @@
-use anyhow::anyhow;
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use super::Error;
+use super::Result;
 use super::Taiga;
 use super::TaigaSprint;
 use super::TaigaStatus;
@@ -57,8 +57,8 @@ impl Taiga {
         self.projects
             .iter()
             .find(|p| p.name == name)
-            .ok_or_else(|| anyhow!("Project '{}' not found", name))
-            .map(|project| project.clone())
+            .cloned()
+            .ok_or(Error::ProjectNotFound(name))
     }
 
     pub fn get_projects(&mut self) -> Result<Vec<TaigaProject>> {

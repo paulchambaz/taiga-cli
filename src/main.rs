@@ -2,13 +2,11 @@ mod cli;
 mod taiga;
 mod utils;
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{row, Cell, Row, Table};
-use std::collections::HashSet;
-use std::process::exit;
-use taiga::{Taiga, TaigaProject, TaigaSubtask, TaigaTask, TaigaTasks};
+use taiga::{Error, Taiga, TaigaProject, TaigaSubtask, TaigaTask, TaigaTasks};
 
 use cli::{parse_args, TaigaCmd};
 use cli::{
@@ -18,33 +16,36 @@ use cli::{
 };
 
 fn main() -> Result<()> {
-    let mut taiga = match Taiga::from_cache() {
-        Some(taiga) => taiga,
-        _ => Taiga::auth(None)?,
-    };
-    let cmd = parse_args(&Some(taiga.clone()));
+    let cached = Taiga::from_cache()?;
 
+    match parse_args(cached.as_ref()) {
+        TaigaCmd::Login(args) => {
+            Taiga::auth(args.address)?;
+            Ok(())
+        }
+        cmd => run(cmd, cached.ok_or(Error::NotLoggedIn)?),
+    }
+}
+
+fn run(cmd: TaigaCmd, mut taiga: Taiga) -> Result<()> {
     match cmd {
         TaigaCmd::Default => taiga_default(&mut taiga),
-        TaigaCmd::Login(args) => {
-            Taiga::auth(args.address);
-        }
-        TaigaCmd::Projects => taiga_projects(&mut taiga),
-        TaigaCmd::NewTask(args) => taiga_new(&mut taiga, args),
-        TaigaCmd::MoveTask(args) => taiga_move(&mut taiga, args),
-        TaigaCmd::DoneTask(args) => taiga_done(&mut taiga, args),
-        TaigaCmd::RenameTask(args) => taiga_rename(&mut taiga, args),
-        TaigaCmd::AssignTask(args) => taiga_assign(&mut taiga, args),
-        TaigaCmd::DueTask(args) => taiga_due(&mut taiga, args),
-        TaigaCmd::SprintTask(args) => taiga_sprint(&mut taiga, args),
-        TaigaCmd::Subtask(args) => taiga_subtask(&mut taiga, args),
-        TaigaCmd::TeamTask(args) => taiga_team(&mut taiga, args),
-        TaigaCmd::ClientTask(args) => taiga_client(&mut taiga, args),
-        TaigaCmd::BlockTask(args) => taiga_block(&mut taiga, args),
-        TaigaCmd::ModifyTask(args) => taiga_modify(&mut taiga, args),
-        TaigaCmd::DeleteTask(args) => taiga_delete(&mut taiga, args),
-        TaigaCmd::SearchTask(args) => taiga_search(&mut taiga, args),
-        TaigaCmd::ProjectUsers(args) => taiga_users(&mut taiga, args),
+        TaigaCmd::Projects => taiga_projects(&mut taiga)?,
+        TaigaCmd::NewTask(args) => taiga_new(&mut taiga, args)?,
+        TaigaCmd::MoveTask(args) => taiga_move(&mut taiga, args)?,
+        TaigaCmd::DoneTask(args) => taiga_done(&mut taiga, args)?,
+        TaigaCmd::RenameTask(args) => taiga_rename(&mut taiga, args)?,
+        TaigaCmd::AssignTask(args) => taiga_assign(&mut taiga, args)?,
+        TaigaCmd::DueTask(args) => taiga_due(&mut taiga, args)?,
+        TaigaCmd::SprintTask(args) => taiga_sprint(&mut taiga, args)?,
+        TaigaCmd::Subtask(args) => taiga_subtask(&mut taiga, args)?,
+        TaigaCmd::TeamTask(args) => taiga_team(&mut taiga, args)?,
+        TaigaCmd::ClientTask(args) => taiga_client(&mut taiga, args)?,
+        TaigaCmd::BlockTask(args) => taiga_block(&mut taiga, args)?,
+        TaigaCmd::ModifyTask(args) => taiga_modify(&mut taiga, args)?,
+        TaigaCmd::DeleteTask(args) => taiga_delete(&mut taiga, args)?,
+        TaigaCmd::SearchTask(args) => taiga_search(&mut taiga, args)?,
+        TaigaCmd::ProjectUsers(args) => taiga_users(&mut taiga, args)?,
         other => println!("TODO: {:?}", other),
     }
     Ok(())
@@ -56,31 +57,23 @@ pub fn taiga_default(taiga: &mut Taiga) {
     }
 }
 
-pub fn taiga_projects(taiga: &mut Taiga) {
-    let projects = taiga.get_projects().unwrap_or_else(|err| {
-        eprintln!("Error, could not get project: {}", err);
-        exit(1);
-    });
+pub fn taiga_projects(taiga: &mut Taiga) -> Result<()> {
+    let projects = taiga.get_projects()?;
 
     for project in &projects {
         println!("{}", project.name);
     }
 
     taiga.projects = projects;
-    taiga.save_cache();
+    taiga.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
+pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
     let id = project.id;
 
-    let mut tasks = taiga.get_tasks(id).unwrap_or_else(|err| {
-        eprintln!("Error, could not get tasks: {}", err);
-        exit(1);
-    });
+    let mut tasks = taiga.get_tasks(id)?;
 
     tasks.retain(|task| !task.closed);
     tasks.sort_by(|a, b| {
@@ -94,48 +87,30 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
             })
     });
 
-    let project = match TaigaProject::from_cache(id) {
-        Ok(Some(project)) => {
-            let members: Vec<i32> = tasks
-                .iter()
-                .flat_map(|task| &task.assigned)
-                .cloned()
-                .collect::<HashSet<i32>>()
-                .into_iter()
-                .collect();
-            let all_present = members
-                .iter()
-                .all(|id| project.members.iter().any(|m| m.id == *id));
-            if all_present {
-                project
-            } else {
-                let project = taiga.get_project(project.id).unwrap_or_else(|err| {
-                    eprintln!("Error, could not get project: {}", err);
-                    exit(1);
-                });
-                project.save_cache();
-                project
-            }
-        }
-        _ => {
-            let project = taiga.get_project(project.id).unwrap_or_else(|err| {
-                eprintln!("Error, could not get project: {}", err);
-                exit(1);
-            });
-            project.save_cache();
+    let cached = TaigaProject::from_cache(id)?.filter(|project| {
+        tasks
+            .iter()
+            .flat_map(|task| &task.assigned)
+            .all(|id| project.members.iter().any(|m| m.id == *id))
+    });
+    let project = match cached {
+        Some(project) => project,
+        None => {
+            let project = taiga.get_project(id)?;
+            project.save_cache()?;
             project
         }
     };
 
     let taiga_tasks = TaigaTasks {
         id: project.id,
-        tasks: tasks.clone(),
+        tasks,
         members: project.members.clone(),
         statuses: project.statuses.clone(),
         task_statuses: project.task_statuses.clone(),
         sprints: project.sprints.clone(),
     };
-    taiga_tasks.save_cache();
+    taiga_tasks.save_cache()?;
 
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
         for status in &args.include_statuses {
@@ -164,91 +139,48 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
             }
         }
         false
-    });
+    })?;
 
-    let mut include_status_ids = Vec::new();
-    for status in args.include_statuses {
-        let status_id = if let Some(status) = tasks.statuses.iter().find(|s| s.slug == *status) {
-            status.id
-        } else {
-            eprintln!("Error, could not find given status");
-            exit(1);
-        };
-        include_status_ids.push(status_id);
-    }
+    let include_status_ids = args
+        .include_statuses
+        .iter()
+        .map(|status| tasks.status_id(status))
+        .collect::<Result<Vec<_>, _>>()?;
+    let exclude_status_ids = args
+        .exclude_statuses
+        .iter()
+        .map(|status| tasks.status_id(status))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let mut exclude_status_ids = Vec::new();
-    for status in args.exclude_statuses {
-        let status_id = if let Some(status) = tasks.statuses.iter().find(|s| s.slug == *status) {
-            status.id
-        } else {
-            eprintln!("Error, could not find given status");
-            exit(1);
-        };
-        exclude_status_ids.push(status_id);
-    }
-
-    let include_sprint_ids: Vec<i32> = args
+    let include_sprint_ids = args
         .include_sprints
         .iter()
-        .filter_map(|sprint| tasks.find_sprint(sprint).map(|s| s.id))
-        .collect();
-    let exclude_sprint_ids: Vec<i32> = args
+        .map(|sprint| tasks.sprint_id(sprint))
+        .collect::<Result<Vec<_>, _>>()?;
+    let exclude_sprint_ids = args
         .exclude_sprints
         .iter()
-        .filter_map(|sprint| tasks.find_sprint(sprint).map(|s| s.id))
-        .collect();
+        .map(|sprint| tasks.sprint_id(sprint))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let mut include_member_ids = Vec::new();
-    for username in args.include_assigned {
-        let member_id = if username == "me" {
-            tasks
-                .members
-                .iter()
-                .find(|member| member.id == taiga.id)
-                .map(|m| m.id)
-                .unwrap_or_else(|| {
-                    eprintln!("Could not find your username on the project");
-                    exit(1);
-                })
-        } else {
-            tasks
-                .members
-                .iter()
-                .find(|member| member.username == username)
-                .map(|m| m.id)
-                .unwrap_or_else(|| {
-                    eprintln!("Could not find username on the project");
-                    exit(1);
-                })
-        };
-        include_member_ids.push(member_id);
-    }
-    let mut exclude_member_ids = Vec::new();
-    for username in args.exclude_assigned {
-        let member_id = if username == "me" {
-            tasks
-                .members
-                .iter()
-                .find(|member| member.id == taiga.id)
-                .map(|m| m.id)
-                .unwrap_or_else(|| {
-                    eprintln!("Could not find your username on the project");
-                    exit(1);
-                })
-        } else {
-            tasks
-                .members
-                .iter()
-                .find(|member| member.username == username)
-                .map(|m| m.id)
-                .unwrap_or_else(|| {
-                    eprintln!("Could not find username on the project");
-                    exit(1);
-                })
-        };
-        exclude_member_ids.push(member_id);
-    }
+    let include_member_ids = args
+        .include_assigned
+        .iter()
+        .map(|username| tasks.member_id(username, taiga.id))
+        .collect::<Result<Vec<_>, _>>()?;
+    let exclude_member_ids = args
+        .exclude_assigned
+        .iter()
+        .map(|username| tasks.member_id(username, taiga.id))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let no_due = args.due_date.as_deref() == Some("");
+    let due_limit = args
+        .due_date
+        .as_deref()
+        .filter(|due_date| !due_date.is_empty())
+        .map(|due_date| NaiveDate::parse_from_str(due_date, "%Y-%m-%d"))
+        .transpose()?;
 
     let mut table = Table::new();
     table.set_format(*FORMAT_CLEAN);
@@ -273,7 +205,7 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         headers.push("B");
     }
 
-    table.add_row(Row::from_iter(headers.iter().map(|&h| h)));
+    table.add_row(Row::from_iter(headers.iter().copied()));
 
     let filter_tasks: Vec<TaigaTask> = tasks
         .tasks
@@ -297,20 +229,14 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
                 }
             }
 
-            if let Some(due_date) = &args.due_date {
-                if due_date.is_empty() {
-                    if task.due.is_some() {
-                        return false;
-                    }
-                } else if let Some(task_due) = task.due {
-                    let a = task_due.date_naive();
-                    let b = NaiveDate::parse_from_str(due_date, "%Y-%m-%d")
-                        .expect("Could not parse due date");
-                    if a > b {
-                        return false;
-                    }
-                } else {
-                    return false;
+            if no_due && task.due.is_some() {
+                return false;
+            }
+
+            if let Some(limit) = due_limit {
+                match task.due {
+                    Some(due) if due.date_naive() <= limit => {}
+                    _ => return false,
                 }
             }
 
@@ -318,7 +244,7 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
                 && !task
                     .assigned
                     .iter()
-                    .any(|id| include_member_ids.iter().any(|member_id| member_id == id))
+                    .any(|id| include_member_ids.contains(id))
             {
                 return false;
             }
@@ -327,48 +253,39 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
                 && task
                     .assigned
                     .iter()
-                    .any(|id| exclude_member_ids.iter().any(|member_id| member_id == id))
+                    .any(|id| exclude_member_ids.contains(id))
             {
                 return false;
             }
 
-            if !include_status_ids.is_empty()
-                && !include_status_ids.iter().any(|id| *id == task.status_id)
-            {
+            if !include_status_ids.is_empty() && !include_status_ids.contains(&task.status_id) {
                 return false;
             }
 
-            if !exclude_status_ids.is_empty()
-                && exclude_status_ids.iter().any(|id| *id == task.status_id)
-            {
+            if exclude_status_ids.contains(&task.status_id) {
                 return false;
             }
 
             if !include_sprint_ids.is_empty()
                 && !task
                     .sprint_id
-                    .is_some_and(|id| include_sprint_ids.iter().any(|sprint_id| *sprint_id == id))
+                    .is_some_and(|id| include_sprint_ids.contains(&id))
             {
                 return false;
             }
 
-            if !exclude_sprint_ids.is_empty()
-                && task
-                    .sprint_id
-                    .is_some_and(|id| exclude_sprint_ids.iter().any(|sprint_id| *sprint_id == id))
+            if task
+                .sprint_id
+                .is_some_and(|id| exclude_sprint_ids.contains(&id))
             {
                 return false;
             }
 
-            if !fzf_match(&task.name, &args.query) {
-                return false;
-            }
-
-            true
+            fzf_match(&task.name, &args.query)
         })
         .collect();
     tasks.tasks = filter_tasks;
-    tasks.clone().save_cache();
+    tasks.save_cache()?;
 
     for (i, task) in tasks.tasks.iter().enumerate() {
         let assigned = task
@@ -379,18 +296,13 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
                     .members
                     .iter()
                     .find(|m| m.id == *id)
-                    .expect("Could not find user")
-                    .username
-                    .clone()
+                    .map(|m| m.username.as_str())
+                    .ok_or_else(|| Error::UserNotFound(id.to_string()))
             })
-            .collect::<Vec<String>>()
+            .collect::<Result<Vec<_>, _>>()?
             .join(", ");
 
-        let due = if let Some(due) = task.due {
-            format_due(&due)
-        } else {
-            "".to_string()
-        };
+        let due = task.due.as_ref().map(format_due).unwrap_or_default();
 
         let mut row_cells = vec![
             Cell::new(&format!("{}", i + 1)),
@@ -422,13 +334,11 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         table.add_row(Row::from_iter(row_cells));
     }
     table.printstd();
+    Ok(())
 }
 
-pub fn taiga_new(taiga: &mut Taiga, args: NewTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
+pub fn taiga_new(taiga: &mut Taiga, args: NewTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
 
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
         if let Some(status) = &args.status {
@@ -447,332 +357,208 @@ pub fn taiga_new(taiga: &mut Taiga, args: NewTaskArgs) {
             }
         }
         false
-    });
+    })?;
 
-    let status_id;
-    if let Some(status) = &args.status {
-        status_id = if let Some(status) = tasks.statuses.iter().find(|s| s.slug == *status) {
-            status.id
-        } else {
-            eprintln!("Error, could not find given status");
-            exit(1);
-        };
-    } else {
-        status_id = tasks
-            .statuses
-            .first()
-            .expect("This project does not have any statuses")
-            .id;
-    }
+    let status_id = match &args.status {
+        Some(status) => tasks.status_id(status)?,
+        None => tasks.statuses.first().ok_or(Error::NoStatuses)?.id,
+    };
 
-    let sprint_id = args.sprint.as_ref().map(|sprint| {
-        tasks.find_sprint(sprint).map(|s| s.id).unwrap_or_else(|| {
-            eprintln!("Error, could not find given sprint");
-            exit(1);
-        })
-    });
+    let sprint_id = args
+        .sprint
+        .as_deref()
+        .map(|sprint| tasks.sprint_id(sprint))
+        .transpose()?;
 
-    let mut assigned_ids = Vec::new();
-    for username in args.assign {
-        let member_id = if username == "me" {
-            tasks
-                .members
-                .iter()
-                .find(|member| member.id == taiga.id)
-                .map(|m| m.id)
-                .unwrap_or_else(|| {
-                    eprintln!("Could not find your username on the project");
-                    exit(1);
-                })
-        } else {
-            tasks
-                .members
-                .iter()
-                .find(|member| member.username == username)
-                .map(|m| m.id)
-                .unwrap_or_else(|| {
-                    eprintln!("Could not find username on the project");
-                    exit(1);
-                })
-        };
-        assigned_ids.push(member_id);
-    }
+    let assigned_ids = args
+        .assign
+        .iter()
+        .map(|username| tasks.member_id(username, taiga.id))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    if let Ok(new_task) = taiga
-        .new_task(
-            project.id,
-            status_id,
-            args.name.clone(),
-            assigned_ids.clone(),
-            args.team,
-            args.client,
-            args.block,
-        )
-        .as_mut()
-    {
-        let task_id = new_task.id;
-        let version = new_task.version;
+    let new_task = taiga.new_task(
+        project.id,
+        status_id,
+        args.name.clone(),
+        assigned_ids.clone(),
+        args.team,
+        args.client,
+        args.block,
+    )?;
 
-        if let Ok(mod_task) = taiga.modify_task(
-            task_id,
-            status_id,
-            args.name,
-            assigned_ids,
-            args.due_date,
-            args.team,
-            args.client,
-            args.block,
-            sprint_id,
-            version,
-        ) {
-            *new_task = mod_task;
-            let new_task = new_task.clone();
-            tasks.tasks.push(new_task);
-            tasks.save_cache();
-        } else {
-            eprintln!("Error, could not modify new task");
-            exit(1);
-        }
-    } else {
-        eprintln!("Error, could not create new task");
-        exit(1);
-    }
+    let new_task = taiga.modify_task(
+        new_task.id,
+        status_id,
+        args.name,
+        assigned_ids,
+        args.due_date,
+        args.team,
+        args.client,
+        args.block,
+        sprint_id,
+        new_task.version,
+    )?;
+
+    tasks.tasks.push(new_task);
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_users(taiga: &mut Taiga, args: ProjectUserArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let tasks = taiga.tasks_from_cache(project.id, |_| true);
-    tasks.clone().save_cache();
+pub fn taiga_users(taiga: &mut Taiga, args: ProjectUserArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let tasks = taiga.tasks_from_cache(project.id, |_| true)?;
+    tasks.save_cache()?;
 
-    for user in tasks.members {
+    for user in &tasks.members {
         println!("{}", user.username);
     }
+    Ok(())
 }
 
-pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
+pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
         !tasks
             .statuses
             .iter()
             .any(|status| status.slug == args.status)
-    });
+    })?;
 
-    let status_id = if let Some(status) = tasks
-        .statuses
-        .iter()
-        .find(|status| status.slug == args.status)
-    {
-        status.id
-    } else {
-        eprintln!("Error, could not find given status");
-        exit(1);
-    };
+    let status_id = tasks.status_id(&args.status)?;
 
-    let task = tasks.get_task(args.id);
-
-    if let Ok(new_task) = taiga.move_task(task.id, status_id, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not move task");
-        exit(1);
-    }
+    let task = tasks.get_task(args.id)?;
+    *task = taiga.move_task(task.id, status_id, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_delete(taiga: &mut Taiga, args: DeleteTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let mut tasks = taiga.tasks_from_cache(project.id, |tasks| tasks.statuses.is_empty());
-    let task = tasks.get_task(args.id);
-    let task_id = task.id;
+pub fn taiga_delete(taiga: &mut Taiga, args: DeleteTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let mut tasks = taiga.tasks_from_cache(project.id, |tasks| tasks.statuses.is_empty())?;
+    let task_id = tasks.get_task(args.id)?.id;
 
-    if taiga.delete_task(task_id).is_err() {
-        eprintln!("Error, could not delete task");
-        exit(1);
-    }
+    taiga.delete_task(task_id)?;
 
     tasks.tasks.retain(|t| t.id != task_id);
-    tasks.save_cache();
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_done(taiga: &mut Taiga, args: DoneTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let mut tasks = taiga.tasks_from_cache(project.id, |tasks| tasks.statuses.is_empty());
+pub fn taiga_done(taiga: &mut Taiga, args: DoneTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let mut tasks = taiga.tasks_from_cache(project.id, |tasks| tasks.statuses.is_empty())?;
 
-    let status_id = if let Some(status) = tasks.statuses.iter().find(|status| status.is_closed) {
-        status.id
-    } else if let Some(status) = tasks.statuses.iter().find(|status| status.slug == "done") {
-        status.id
-    } else {
-        tasks
-            .statuses
-            .last()
-            .expect("No statuses in the project")
-            .id
-    };
+    let status_id = tasks
+        .statuses
+        .iter()
+        .find(|status| status.is_closed)
+        .or_else(|| tasks.statuses.iter().find(|status| status.slug == "done"))
+        .or_else(|| tasks.statuses.last())
+        .ok_or(Error::NoStatuses)?
+        .id;
 
-    let task = tasks.get_task(args.id);
-
-    if let Ok(new_task) = taiga.move_task(task.id, status_id, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not done task");
-        exit(1);
-    }
+    let task = tasks.get_task(args.id)?;
+    *task = taiga.move_task(task.id, status_id, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_rename(taiga: &mut Taiga, args: RenameTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
-    let task = tasks.get_task(args.id);
+pub fn taiga_rename(taiga: &mut Taiga, args: RenameTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let mut tasks = taiga.tasks_from_cache(project.id, |_| false)?;
+    let task = tasks.get_task(args.id)?;
 
-    if let Ok(new_task) = taiga.rename_task(task.id, args.name, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not rename task");
-        exit(1);
-    }
+    *task = taiga.rename_task(task.id, args.name, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_assign(taiga: &mut Taiga, args: AssignTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
+pub fn taiga_assign(taiga: &mut Taiga, args: AssignTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
         args.username != "me"
             && !tasks
                 .members
                 .iter()
                 .any(|member| member.username == args.username)
-    });
+    })?;
 
-    let member_id = if args.username == "me" {
-        tasks
-            .members
+    let member_id = tasks.member_id(&args.username, taiga.id)?;
+
+    let task = tasks.get_task(args.id)?;
+
+    let is_assigned = task.assigned.contains(&member_id);
+    let assigned: Vec<i32> = if args.remove {
+        if !is_assigned {
+            bail!("the user is not assigned to the task, cannot remove");
+        }
+        task.assigned
             .iter()
-            .find(|member| member.id == taiga.id)
-            .map(|m| m.id)
-            .unwrap_or_else(|| {
-                eprintln!("Could not find your username on the project");
-                exit(1);
-            })
+            .copied()
+            .filter(|m| *m != member_id)
+            .collect()
+    } else if is_assigned {
+        bail!("the user is already assigned to the task, cannot add");
     } else {
-        tasks
-            .members
-            .iter()
-            .find(|member| member.username == args.username)
-            .map(|m| m.id)
-            .unwrap_or_else(|| {
-                eprintln!("Could not find username on the project");
-                exit(1);
-            })
+        let mut assigned = task.assigned.clone();
+        assigned.push(member_id);
+        assigned
     };
 
-    let task = tasks.get_task(args.id);
-
-    let mut assigned = task.assigned.clone();
-    if args.remove {
-        if assigned.iter().any(|m| *m == member_id) {
-            assigned = assigned
-                .iter()
-                .filter(|&&m| m != member_id)
-                .copied()
-                .collect();
-        } else {
-            eprintln!("Error, the user is not assigned to the task, cannot remove");
-            exit(1);
-        }
-    } else if assigned.iter().any(|m| *m == member_id) {
-        eprintln!("Error, the user is already assigned to the task, cannot add");
-        exit(1);
-    } else {
-        assigned.push(member_id);
-    }
-
-    if let Ok(new_task) = taiga.assign_task(task.id, assigned, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not assign task");
-        exit(1);
-    }
+    *task = taiga.assign_task(task.id, assigned, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_due(taiga: &mut Taiga, args: DueTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
-    let task = tasks.get_task(args.id);
+pub fn taiga_due(taiga: &mut Taiga, args: DueTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let mut tasks = taiga.tasks_from_cache(project.id, |_| false)?;
+    let task = tasks.get_task(args.id)?;
 
-    if let Ok(new_task) = taiga.due_task(task.id, args.due_date, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not assign task");
-        exit(1);
-    }
+    *task = taiga.due_task(task.id, args.due_date, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_sprint(taiga: &mut Taiga, args: SprintTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
+pub fn taiga_sprint(taiga: &mut Taiga, args: SprintTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
         args.sprint
             .as_ref()
             .is_some_and(|sprint| tasks.find_sprint(sprint).is_none())
-    });
+    })?;
 
-    let milestone_id = args.sprint.as_ref().map(|sprint| {
-        tasks.find_sprint(sprint).map(|s| s.id).unwrap_or_else(|| {
-            eprintln!("Error, could not find given sprint");
-            exit(1);
-        })
-    });
+    let milestone_id = args
+        .sprint
+        .as_deref()
+        .map(|sprint| tasks.sprint_id(sprint))
+        .transpose()?;
 
-    let task = tasks.get_task(args.id);
+    let task = tasks.get_task(args.id)?;
 
-    if let Ok(new_task) = taiga.sprint_task(task.id, milestone_id, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not set sprint for task");
-        exit(1);
-    }
+    *task = taiga.sprint_task(task.id, milestone_id, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
+fn find_subtask(
+    taiga: &mut Taiga,
+    project_id: i32,
+    story_id: i32,
+    index: usize,
+) -> Result<TaigaSubtask> {
+    let subtasks = taiga.get_subtasks(project_id, story_id)?;
+    index
+        .checked_sub(1)
+        .and_then(|i| subtasks.into_iter().nth(i))
+        .ok_or_else(|| anyhow!("the story has no subtask {index}"))
+}
 
-    let (story_id, members, task_statuses) = {
-        let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
-        let story = tasks.get_task(args.story_id);
-        (story.id, tasks.members.clone(), tasks.task_statuses.clone())
-    };
+pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+
+    let mut tasks = taiga.tasks_from_cache(project.id, |_| false)?;
+    let story_id = tasks.get_task(args.story_id)?.id;
 
     match args.action {
         SubtaskAction::New {
@@ -780,63 +566,28 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
             description,
             assign,
         } => {
-            let status_id = task_statuses
-                .first()
-                .unwrap_or_else(|| {
-                    eprintln!("This project has no task statuses");
-                    exit(1);
-                })
-                .id;
+            let status_id = tasks.task_statuses.first().ok_or(Error::NoStatuses)?.id;
 
-            let assigned_id = assign.map(|username| {
-                if username == "me" {
-                    members
-                        .iter()
-                        .find(|m| m.id == taiga.id)
-                        .map(|m| m.id)
-                        .unwrap_or_else(|| {
-                            eprintln!("Could not find your username on the project");
-                            exit(1);
-                        })
-                } else {
-                    members
-                        .iter()
-                        .find(|m| m.username == username)
-                        .map(|m| m.id)
-                        .unwrap_or_else(|| {
-                            eprintln!("Could not find username on the project");
-                            exit(1);
-                        })
-                }
-            });
+            let assigned_id = assign
+                .map(|username| tasks.member_id(&username, taiga.id))
+                .transpose()?;
 
-            if taiga
-                .new_subtask(
-                    project.id,
-                    story_id,
-                    status_id,
-                    name,
-                    description,
-                    assigned_id,
-                )
-                .is_err()
-            {
-                eprintln!("Error, could not create subtask");
-                exit(1);
-            }
+            taiga.new_subtask(
+                project.id,
+                story_id,
+                status_id,
+                name,
+                description,
+                assigned_id,
+            )?;
         }
         SubtaskAction::List => {
-            let subtasks = taiga
-                .get_subtasks(project.id, story_id)
-                .unwrap_or_else(|err| {
-                    eprintln!("Error, could not get subtasks: {}", err);
-                    exit(1);
-                });
+            let subtasks = taiga.get_subtasks(project.id, story_id)?;
 
-            let subtasks: Vec<TaigaSubtask> = subtasks
+            let subtasks = subtasks
                 .iter()
-                .map(|s| taiga.get_subtask(s.id).unwrap_or_else(|_| s.clone()))
-                .collect();
+                .map(|s| taiga.get_subtask(s.id))
+                .collect::<Result<Vec<_>, _>>()?;
 
             let mut table = Table::new();
             table.set_format(*FORMAT_CLEAN);
@@ -844,119 +595,63 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
             for (i, subtask) in subtasks.iter().enumerate() {
                 let assigned = subtask
                     .assigned
-                    .and_then(|id| members.iter().find(|m| m.id == id))
+                    .and_then(|id| tasks.members.iter().find(|m| m.id == id))
                     .map(|m| m.username.as_str())
                     .unwrap_or("");
-                table.add_row(Row::from_iter(
-                    vec![
-                        format!("{}", i + 1),
-                        subtask.status.clone(),
-                        subtask.name.clone(),
-                        subtask.description.clone(),
-                        assigned.to_string(),
-                    ]
-                    .iter()
-                    .map(|s| Cell::new(s)),
-                ));
+                table.add_row(Row::new(vec![
+                    Cell::new(&format!("{}", i + 1)),
+                    Cell::new(&subtask.status),
+                    Cell::new(&subtask.name),
+                    Cell::new(&subtask.description),
+                    Cell::new(assigned),
+                ]));
             }
             table.printstd();
         }
         SubtaskAction::Describe { index, description } => {
-            let subtasks = taiga
-                .get_subtasks(project.id, story_id)
-                .unwrap_or_else(|err| {
-                    eprintln!("Error, could not get subtasks: {}", err);
-                    exit(1);
-                });
-            let subtask = subtasks.get(index.wrapping_sub(1)).unwrap_or_else(|| {
-                eprintln!("Invalid subtask for this story");
-                exit(1);
-            });
-
-            if taiga
-                .describe_subtask(subtask.id, description, subtask.version)
-                .is_err()
-            {
-                eprintln!("Error, could not set description for subtask");
-                exit(1);
-            }
+            let subtask = find_subtask(taiga, project.id, story_id, index)?;
+            taiga.describe_subtask(subtask.id, description, subtask.version)?;
         }
         SubtaskAction::Delete { index } => {
-            let subtasks = taiga
-                .get_subtasks(project.id, story_id)
-                .unwrap_or_else(|err| {
-                    eprintln!("Error, could not get subtasks: {}", err);
-                    exit(1);
-                });
-            let subtask = subtasks.get(index.wrapping_sub(1)).unwrap_or_else(|| {
-                eprintln!("Invalid subtask for this story");
-                exit(1);
-            });
-
-            if taiga.delete_subtask(subtask.id).is_err() {
-                eprintln!("Error, could not delete subtask");
-                exit(1);
-            }
+            let subtask = find_subtask(taiga, project.id, story_id, index)?;
+            taiga.delete_subtask(subtask.id)?;
         }
     }
+    Ok(())
 }
 
-pub fn taiga_team(taiga: &mut Taiga, args: TeamTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
-    let task = tasks.get_task(args.id);
+pub fn taiga_team(taiga: &mut Taiga, args: TeamTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let mut tasks = taiga.tasks_from_cache(project.id, |_| false)?;
+    let task = tasks.get_task(args.id)?;
 
-    if let Ok(new_task) = taiga.team_task(task.id, args.remove, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not assign task");
-        exit(1);
-    }
+    *task = taiga.team_task(task.id, args.remove, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_client(taiga: &mut Taiga, args: ClientTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
-    let task = tasks.get_task(args.id);
+pub fn taiga_client(taiga: &mut Taiga, args: ClientTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let mut tasks = taiga.tasks_from_cache(project.id, |_| false)?;
+    let task = tasks.get_task(args.id)?;
 
-    if let Ok(new_task) = taiga.client_task(task.id, args.remove, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not assign task");
-        exit(1);
-    }
+    *task = taiga.client_task(task.id, args.remove, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_block(taiga: &mut Taiga, args: BlockTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
-    let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
-    let task = tasks.get_task(args.id);
+pub fn taiga_block(taiga: &mut Taiga, args: BlockTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
+    let mut tasks = taiga.tasks_from_cache(project.id, |_| false)?;
+    let task = tasks.get_task(args.id)?;
 
-    if let Ok(new_task) = taiga.block_task(task.id, args.remove, task.version) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not assign task");
-        exit(1);
-    }
+    *task = taiga.block_task(task.id, args.remove, task.version)?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
-pub fn taiga_modify(taiga: &mut Taiga, args: ModifyTaskArgs) {
-    let project = taiga.find_project(args.project).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        exit(1);
-    });
+pub fn taiga_modify(taiga: &mut Taiga, args: ModifyTaskArgs) -> Result<()> {
+    let project = taiga.find_project(args.project)?;
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
         if let Some(status) = &args.status {
             if !tasks.statuses.iter().any(|s| s.slug == *status) {
@@ -976,126 +671,54 @@ pub fn taiga_modify(taiga: &mut Taiga, args: ModifyTaskArgs) {
             }
         }
         false
-    });
+    })?;
 
-    let mut status_id = 0;
-    if let Some(status) = &args.status {
-        status_id = if let Some(status) = tasks.statuses.iter().find(|s| s.slug == *status) {
-            status.id
-        } else {
-            eprintln!("Error, could not find given status");
-            exit(1);
-        };
-    }
+    let status_id = args
+        .status
+        .as_deref()
+        .map(|status| tasks.status_id(status))
+        .transpose()?;
 
     let sprint_id: Option<Option<i32>> = match &args.sprint {
         None => None,
         Some(None) => Some(None),
-        Some(Some(sprint)) => Some(Some(
-            tasks.find_sprint(sprint).map(|s| s.id).unwrap_or_else(|| {
-                eprintln!("Error, could not find given sprint");
-                exit(1);
-            }),
-        )),
+        Some(Some(sprint)) => Some(Some(tasks.sprint_id(sprint)?)),
     };
 
-    let mut assigned_ids = Vec::new();
-    if let Some(assign) = &args.assign {
-        for username in assign {
-            let member_id = if username == "me" {
-                tasks
-                    .members
-                    .iter()
-                    .find(|member| member.id == taiga.id)
-                    .map(|m| m.id)
-                    .unwrap_or_else(|| {
-                        eprintln!("Could not find your username on the project");
-                        exit(1);
-                    })
-            } else {
-                tasks
-                    .members
-                    .iter()
-                    .find(|member| member.username == *username)
-                    .map(|m| m.id)
-                    .unwrap_or_else(|| {
-                        eprintln!("Could not find username on the project");
-                        exit(1);
-                    })
-            };
-            assigned_ids.push(member_id);
-        }
+    let assigned_ids = args
+        .assign
+        .iter()
+        .flatten()
+        .map(|username| tasks.member_id(username, taiga.id))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let task = tasks.get_task(args.id)?;
+
+    let mut assign = task.assigned.clone();
+    if args.assign.is_some() {
+        assign.extend(assigned_ids);
+        assign.sort();
+        assign.dedup();
     }
-
-    let task = tasks.get_task(args.id);
-
-    let status = if args.status.is_some() {
-        status_id
-    } else {
-        task.status_id
-    };
-
-    let rename = if let Some(rename) = args.rename {
-        rename
-    } else {
-        task.name.clone()
-    };
-
-    let assign = if args.assign.is_some() {
-        let mut combined_ids = task.assigned.clone();
-        combined_ids.extend(assigned_ids);
-        combined_ids.sort();
-        combined_ids.dedup();
-        combined_ids
-    } else {
-        task.assigned.clone()
-    };
 
     let due_date = args
         .due_date
         .or_else(|| task.due.map(|due| due.format("%Y-%m-%d").to_string()));
 
-    let team = if let Some(team) = args.team {
-        team
-    } else {
-        task.team
-    };
-
-    let client = if let Some(client) = args.client {
-        client
-    } else {
-        task.client
-    };
-
-    let block = if let Some(block) = args.block {
-        block
-    } else {
-        task.blocked
-    };
-
-    let sprint = match sprint_id {
-        Some(sprint) => sprint,
-        None => task.sprint_id,
-    };
-
-    if let Ok(new_task) = taiga.modify_task(
+    *task = taiga.modify_task(
         task.id,
-        status,
-        rename,
+        status_id.unwrap_or(task.status_id),
+        args.rename.unwrap_or_else(|| task.name.clone()),
         assign,
         due_date,
-        team,
-        client,
-        block,
-        sprint,
+        args.team.unwrap_or(task.team),
+        args.client.unwrap_or(task.client),
+        args.block.unwrap_or(task.blocked),
+        sprint_id.unwrap_or(task.sprint_id),
         task.version,
-    ) {
-        *task = new_task;
-        tasks.save_cache();
-    } else {
-        eprintln!("Error, could not assign task");
-        exit(1);
-    }
+    )?;
+    tasks.save_cache()?;
+    Ok(())
 }
 
 fn format_due(due: &DateTime<Utc>) -> String {

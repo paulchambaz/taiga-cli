@@ -179,7 +179,7 @@ pub enum TaigaCmd {
     ProjectBurndown(ProjectBurndownArgs),
 }
 
-pub fn parse_args(taiga: &Option<Taiga>) -> TaigaCmd {
+pub fn parse_args(taiga: Option<&Taiga>) -> TaigaCmd {
     let args: Vec<String> = env::args().skip(1).collect();
 
     if args.is_empty() {
@@ -215,6 +215,9 @@ pub fn parse_args(taiga: &Option<Taiga>) -> TaigaCmd {
             let project = project.to_string();
             if allowed_projects.contains(&project) {
                 cli_project(project, &args[1..])
+            } else if taiga.is_none() {
+                eprintln!("Error, not logged in, run `taiga login`");
+                exit(1);
             } else {
                 eprintln!("Error, not a valid command");
                 exit(1);

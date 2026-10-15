@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod cache;
+pub mod error;
 pub mod project;
 pub mod request;
 pub mod sprint;
@@ -9,6 +10,7 @@ pub mod taiga;
 pub mod task;
 pub mod user;
 
+pub use self::error::*;
 pub use self::project::*;
 pub use self::sprint::*;
 pub use self::status::*;

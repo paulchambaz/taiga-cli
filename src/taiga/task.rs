@@ -1,10 +1,7 @@
-use std::process::exit;
-
-use anyhow::Result;
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{Taiga, TaigaSprint, TaigaStatus, TaigaUser};
+use super::{Result, Taiga, TaigaSprint, TaigaStatus, TaigaUser};
 use crate::utils::slug;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -295,24 +292,20 @@ impl Taiga {
         .map(|t| TaigaTask::new(&t))
     }
 
-    pub fn update_tasks(&mut self, id: i32, tasks: TaigaTasks) -> TaigaTasks {
-        let project = self.get_project(id).unwrap_or_else(|err| {
-            eprintln!("Error, could not get project: {}", err);
-            exit(1);
-        });
+    pub fn update_tasks(&mut self, id: i32, tasks: TaigaTasks) -> Result<TaigaTasks> {
+        let project = self.get_project(id)?;
 
         let tasks = TaigaTasks {
-            id: tasks.id,
-            tasks: tasks.tasks.clone(),
             members: project.members,
             statuses: project.statuses,
             task_statuses: project.task_statuses,
             sprints: project.sprints,
+            ..tasks
         };
 
-        tasks.clone().save_cache();
+        tasks.save_cache()?;
 
-        tasks
+        Ok(tasks)
     }
 }
 
@@ -327,12 +320,12 @@ impl TaigaTask {
             client: t.client_requirement,
             blocked: t.is_blocked,
             assigned: t.assigned_users.clone(),
-            due: t.due_date.as_ref().and_then(|date| {
-                date.parse::<NaiveDate>()
-                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
-                    .ok()
-                    .map(|dt| Utc.from_utc_datetime(&dt))
-            }),
+            due: t
+                .due_date
+                .as_ref()
+                .and_then(|date| date.parse::<NaiveDate>().ok())
+                .and_then(|date| date.and_hms_opt(0, 0, 0))
+                .map(|dt| Utc.from_utc_datetime(&dt)),
             closed: false,
             version: t.version,
             sprint_id: t.milestone,

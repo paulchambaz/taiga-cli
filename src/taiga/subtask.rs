@@ -1,7 +1,6 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::Taiga;
+use super::{Result, Taiga};
 use crate::utils::slug;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
