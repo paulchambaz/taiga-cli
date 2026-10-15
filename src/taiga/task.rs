@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{Result, Taiga, TaigaSprint, TaigaStatus, TaigaUser};
+use super::{Result, Taiga};
 use crate::utils::slug;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -18,16 +18,6 @@ pub struct TaigaTask {
     pub closed: bool,
     pub version: i32,
     pub sprint_id: Option<i32>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TaigaTasks {
-    pub id: i32,
-    pub tasks: Vec<TaigaTask>,
-    pub members: Vec<TaigaUser>,
-    pub statuses: Vec<TaigaStatus>,
-    pub task_statuses: Vec<TaigaStatus>,
-    pub sprints: Vec<TaigaSprint>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -290,22 +280,6 @@ impl Taiga {
             },
         )
         .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn update_tasks(&mut self, id: i32, tasks: TaigaTasks) -> Result<TaigaTasks> {
-        let project = self.get_project(id)?;
-
-        let tasks = TaigaTasks {
-            members: project.members,
-            statuses: project.statuses,
-            task_statuses: project.task_statuses,
-            sprints: project.sprints,
-            ..tasks
-        };
-
-        tasks.save_cache()?;
-
-        Ok(tasks)
     }
 }
 

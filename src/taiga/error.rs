@@ -25,8 +25,6 @@ pub enum Error {
     Cache(#[from] bincode::Error),
     #[error("could not find a cache directory")]
     NoCacheDir,
-    #[error("no cached tasks for this project, run search first")]
-    NoTaskCache,
     #[error("project '{0}' not found")]
     ProjectNotFound(String),
     #[error("status '{0}' not found")]

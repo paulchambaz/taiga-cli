@@ -2,8 +2,6 @@ use reqwest::blocking::Client;
 use rpassword::read_password;
 use serde::{Deserialize, Serialize};
 use std::io::{self, stdin, Write};
-use std::ops::Add;
-use std::time::{Duration, SystemTime};
 
 use super::request::check;
 use super::taiga::Taiga;
@@ -55,14 +53,12 @@ impl Taiga {
             url: base_url,
             id: auth_response.id,
             refresh: auth_response.refresh,
-            refresh_time: SystemTime::now().add(Duration::from_secs(24 * 60 * 60)),
             username,
             password,
             projects: vec![],
         };
 
-        taiga.projects = taiga.get_projects()?;
-        taiga.save_cache()?;
+        taiga.update_projects()?;
         Ok(taiga)
     }
 
@@ -99,7 +95,6 @@ impl Taiga {
     fn set_tokens(&mut self, auth_token: String, refresh: String) -> Result<()> {
         self.auth_token = auth_token;
         self.refresh = refresh;
-        self.refresh_time = SystemTime::now().add(Duration::from_secs(24 * 60 * 60));
         self.save_cache()
     }
 }
