@@ -68,7 +68,6 @@ pub struct SprintTaskArgs {
     pub project: String,
     pub id: usize,
     pub sprint: Option<String>,
-    pub remove: bool,
 }
 
 #[derive(Debug)]
@@ -127,8 +126,6 @@ pub struct ModifyTaskArgs {
     pub team: Option<bool>,
     pub client: Option<bool>,
     pub block: Option<bool>,
-    // None = leave the sprint alone, Some(None) = take it out of its sprint,
-    // Some(Some(name)) = put it in the named sprint.
     pub sprint: Option<Option<String>>,
 }
 
@@ -932,7 +929,6 @@ fn cli_project_sprint(project: String, id: usize, args: &[String]) -> TaigaCmd {
                 project,
                 id,
                 sprint: None,
-                remove: true,
             });
         } else {
             cli_project_sprint_help(project, id);
@@ -954,7 +950,6 @@ fn cli_project_sprint(project: String, id: usize, args: &[String]) -> TaigaCmd {
         project,
         id,
         sprint: Some(sprint),
-        remove: false,
     })
 }
 
@@ -1814,12 +1809,10 @@ fn cli_project_search_help(project: String) {
 }
 
 fn cli_project_users(project: String, _args: &[String]) -> TaigaCmd {
-    // TODO: implement help
     TaigaCmd::ProjectUsers(ProjectUserArgs { project })
 }
 
 fn cli_project_burndown(project: String, _args: &[String]) -> TaigaCmd {
-    // TODO: implement help
     TaigaCmd::ProjectBurndown(ProjectBurndownArgs { project })
 }
 

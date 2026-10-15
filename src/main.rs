@@ -85,17 +85,12 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
     tasks.retain(|task| !task.closed);
     tasks.sort_by(|a, b| {
         b.status_id
-            .cmp(&a.status_id) // Reverse the order to ensure higher status_ids go first
-            .then_with(|| {
-                match (&a.due, &b.due) {
-                    // If both tasks have due dates, compare them directly.
-                    (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
-                    // If only one task has a due date, it goes first.
-                    (Some(_), _) => std::cmp::Ordering::Less,
-                    (_, Some(_)) => std::cmp::Ordering::Greater,
-                    // If neither task has a due date, they are considered equal.
-                    (_, _) => std::cmp::Ordering::Equal,
-                }
+            .cmp(&a.status_id)
+            .then_with(|| match (&a.due, &b.due) {
+                (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
+                (Some(_), _) => std::cmp::Ordering::Less,
+                (_, Some(_)) => std::cmp::Ordering::Greater,
+                (_, _) => std::cmp::Ordering::Equal,
             })
     });
 
@@ -137,6 +132,7 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         tasks: tasks.clone(),
         members: project.members.clone(),
         statuses: project.statuses.clone(),
+        task_statuses: project.task_statuses.clone(),
         sprints: project.sprints.clone(),
     };
     taiga_tasks.save_cache();
@@ -152,21 +148,8 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
                 return true;
             }
         }
-        for sprint in &args.include_sprints {
-            if !tasks
-                .sprints
-                .iter()
-                .any(|s| s.slug == *sprint || s.name == *sprint)
-            {
-                return true;
-            }
-        }
-        for sprint in &args.exclude_sprints {
-            if !tasks
-                .sprints
-                .iter()
-                .any(|s| s.slug == *sprint || s.name == *sprint)
-            {
+        for sprint in args.include_sprints.iter().chain(&args.exclude_sprints) {
+            if tasks.find_sprint(sprint).is_none() {
                 return true;
             }
         }
@@ -205,35 +188,16 @@ pub fn taiga_search(taiga: &mut Taiga, args: SearchTaskArgs) {
         exclude_status_ids.push(status_id);
     }
 
-    let mut include_sprint_ids = Vec::new();
-    for sprint in args.include_sprints {
-        let sprint_id = if let Some(sprint) = tasks
-            .sprints
-            .iter()
-            .find(|s| s.slug == *sprint || s.name == *sprint)
-        {
-            sprint.id
-        } else {
-            eprintln!("Error, could not find given sprint");
-            exit(1);
-        };
-        include_sprint_ids.push(sprint_id);
-    }
-
-    let mut exclude_sprint_ids = Vec::new();
-    for sprint in args.exclude_sprints {
-        let sprint_id = if let Some(sprint) = tasks
-            .sprints
-            .iter()
-            .find(|s| s.slug == *sprint || s.name == *sprint)
-        {
-            sprint.id
-        } else {
-            eprintln!("Error, could not find given sprint");
-            exit(1);
-        };
-        exclude_sprint_ids.push(sprint_id);
-    }
+    let include_sprint_ids: Vec<i32> = args
+        .include_sprints
+        .iter()
+        .filter_map(|sprint| tasks.find_sprint(sprint).map(|s| s.id))
+        .collect();
+    let exclude_sprint_ids: Vec<i32> = args
+        .exclude_sprints
+        .iter()
+        .filter_map(|sprint| tasks.find_sprint(sprint).map(|s| s.id))
+        .collect();
 
     let mut include_member_ids = Vec::new();
     for username in args.include_assigned {
@@ -473,11 +437,7 @@ pub fn taiga_new(taiga: &mut Taiga, args: NewTaskArgs) {
             }
         }
         if let Some(sprint) = &args.sprint {
-            if !tasks
-                .sprints
-                .iter()
-                .any(|s| s.slug == *sprint || s.name == *sprint)
-            {
+            if tasks.find_sprint(sprint).is_none() {
                 return true;
             }
         }
@@ -505,20 +465,12 @@ pub fn taiga_new(taiga: &mut Taiga, args: NewTaskArgs) {
             .id;
     }
 
-    let sprint_id = if let Some(sprint) = &args.sprint {
-        if let Some(sprint) = tasks
-            .sprints
-            .iter()
-            .find(|s| s.slug == *sprint || s.name == *sprint)
-        {
-            Some(sprint.id)
-        } else {
+    let sprint_id = args.sprint.as_ref().map(|sprint| {
+        tasks.find_sprint(sprint).map(|s| s.id).unwrap_or_else(|| {
             eprintln!("Error, could not find given sprint");
             exit(1);
-        }
-    } else {
-        None
-    };
+        })
+    });
 
     let mut assigned_ids = Vec::new();
     for username in args.assign {
@@ -601,7 +553,6 @@ pub fn taiga_users(taiga: &mut Taiga, args: ProjectUserArgs) {
 }
 
 pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) {
-    // getting the necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
@@ -613,7 +564,6 @@ pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) {
             .any(|status| status.slug == args.status)
     });
 
-    // checking status is present on the project
     let status_id = if let Some(status) = tasks
         .statuses
         .iter()
@@ -627,7 +577,6 @@ pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) {
 
     let task = tasks.get_task(args.id);
 
-    // pushing the changes
     if let Ok(new_task) = taiga.move_task(task.id, status_id, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -651,22 +600,17 @@ pub fn taiga_delete(taiga: &mut Taiga, args: DeleteTaskArgs) {
         exit(1);
     }
 
-    // Keep the local cache in sync with the deleted task, otherwise later
-    // commands in a future invocation index into a stale list and can end up
-    // targeting the wrong card.
     tasks.tasks.retain(|t| t.id != task_id);
     tasks.save_cache();
 }
 
 pub fn taiga_done(taiga: &mut Taiga, args: DoneTaskArgs) {
-    // getting the necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
     });
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| tasks.statuses.is_empty());
 
-    // getting the appropriate status for done
     let status_id = if let Some(status) = tasks.statuses.iter().find(|status| status.is_closed) {
         status.id
     } else if let Some(status) = tasks.statuses.iter().find(|status| status.slug == "done") {
@@ -681,7 +625,6 @@ pub fn taiga_done(taiga: &mut Taiga, args: DoneTaskArgs) {
 
     let task = tasks.get_task(args.id);
 
-    // pushing the change
     if let Ok(new_task) = taiga.move_task(task.id, status_id, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -692,7 +635,6 @@ pub fn taiga_done(taiga: &mut Taiga, args: DoneTaskArgs) {
 }
 
 pub fn taiga_rename(taiga: &mut Taiga, args: RenameTaskArgs) {
-    // getting necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
@@ -700,7 +642,6 @@ pub fn taiga_rename(taiga: &mut Taiga, args: RenameTaskArgs) {
     let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
     let task = tasks.get_task(args.id);
 
-    // pushing the change
     if let Ok(new_task) = taiga.rename_task(task.id, args.name, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -711,7 +652,6 @@ pub fn taiga_rename(taiga: &mut Taiga, args: RenameTaskArgs) {
 }
 
 pub fn taiga_assign(taiga: &mut Taiga, args: AssignTaskArgs) {
-    // getting necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
@@ -748,7 +688,6 @@ pub fn taiga_assign(taiga: &mut Taiga, args: AssignTaskArgs) {
 
     let task = tasks.get_task(args.id);
 
-    // making sure the user can be (de)added from the task
     let mut assigned = task.assigned.clone();
     if args.remove {
         if assigned.iter().any(|m| *m == member_id) {
@@ -768,7 +707,6 @@ pub fn taiga_assign(taiga: &mut Taiga, args: AssignTaskArgs) {
         assigned.push(member_id);
     }
 
-    // pushing the change
     if let Ok(new_task) = taiga.assign_task(task.id, assigned, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -779,7 +717,6 @@ pub fn taiga_assign(taiga: &mut Taiga, args: AssignTaskArgs) {
 }
 
 pub fn taiga_due(taiga: &mut Taiga, args: DueTaskArgs) {
-    // getting necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
@@ -787,7 +724,6 @@ pub fn taiga_due(taiga: &mut Taiga, args: DueTaskArgs) {
     let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
     let task = tasks.get_task(args.id);
 
-    // pushing the change
     if let Ok(new_task) = taiga.due_task(task.id, args.due_date, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -798,39 +734,25 @@ pub fn taiga_due(taiga: &mut Taiga, args: DueTaskArgs) {
 }
 
 pub fn taiga_sprint(taiga: &mut Taiga, args: SprintTaskArgs) {
-    // getting necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
     });
     let mut tasks = taiga.tasks_from_cache(project.id, |tasks| {
-        if let Some(sprint) = &args.sprint {
-            !tasks.sprints.iter().any(|s| s.slug == *sprint || s.name == *sprint)
-        } else {
-            false
-        }
+        args.sprint
+            .as_ref()
+            .is_some_and(|sprint| tasks.find_sprint(sprint).is_none())
     });
 
-    let milestone_id = if args.remove {
-        None
-    } else if let Some(sprint) = &args.sprint {
-        let found = tasks
-            .sprints
-            .iter()
-            .find(|s| s.slug == *sprint || s.name == *sprint)
-            .map(|s| s.id);
-        if found.is_none() {
+    let milestone_id = args.sprint.as_ref().map(|sprint| {
+        tasks.find_sprint(sprint).map(|s| s.id).unwrap_or_else(|| {
             eprintln!("Error, could not find given sprint");
             exit(1);
-        }
-        found
-    } else {
-        None
-    };
+        })
+    });
 
     let task = tasks.get_task(args.id);
 
-    // pushing the change
     if let Ok(new_task) = taiga.sprint_task(task.id, milestone_id, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -846,13 +768,10 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
         exit(1);
     });
 
-    // Resolve the parent story's real Taiga id and pull the member list
-    // for @username lookups, then drop the cache borrow before making any
-    // API calls below.
-    let (story_id, members) = {
+    let (story_id, members, task_statuses) = {
         let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
         let story = tasks.get_task(args.story_id);
-        (story.id, tasks.members.clone())
+        (story.id, tasks.members.clone(), tasks.task_statuses.clone())
     };
 
     match args.action {
@@ -861,11 +780,7 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
             description,
             assign,
         } => {
-            let statuses = taiga.get_task_statuses(project.id).unwrap_or_else(|err| {
-                eprintln!("Error, could not get task statuses: {}", err);
-                exit(1);
-            });
-            let status_id = statuses
+            let status_id = task_statuses
                 .first()
                 .unwrap_or_else(|| {
                     eprintln!("This project has no task statuses");
@@ -911,13 +826,13 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
             }
         }
         SubtaskAction::List => {
-            let subtasks = taiga.get_subtasks(project.id, story_id).unwrap_or_else(|err| {
-                eprintln!("Error, could not get subtasks: {}", err);
-                exit(1);
-            });
+            let subtasks = taiga
+                .get_subtasks(project.id, story_id)
+                .unwrap_or_else(|err| {
+                    eprintln!("Error, could not get subtasks: {}", err);
+                    exit(1);
+                });
 
-            // The list endpoint doesn't carry descriptions - fetch each
-            // task's detail view to fill that column in.
             let subtasks: Vec<TaigaSubtask> = subtasks
                 .iter()
                 .map(|s| taiga.get_subtask(s.id).unwrap_or_else(|_| s.clone()))
@@ -947,10 +862,12 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
             table.printstd();
         }
         SubtaskAction::Describe { index, description } => {
-            let subtasks = taiga.get_subtasks(project.id, story_id).unwrap_or_else(|err| {
-                eprintln!("Error, could not get subtasks: {}", err);
-                exit(1);
-            });
+            let subtasks = taiga
+                .get_subtasks(project.id, story_id)
+                .unwrap_or_else(|err| {
+                    eprintln!("Error, could not get subtasks: {}", err);
+                    exit(1);
+                });
             let subtask = subtasks.get(index.wrapping_sub(1)).unwrap_or_else(|| {
                 eprintln!("Invalid subtask for this story");
                 exit(1);
@@ -965,17 +882,17 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
             }
         }
         SubtaskAction::Delete { index } => {
-            let subtasks = taiga.get_subtasks(project.id, story_id).unwrap_or_else(|err| {
-                eprintln!("Error, could not get subtasks: {}", err);
-                exit(1);
-            });
+            let subtasks = taiga
+                .get_subtasks(project.id, story_id)
+                .unwrap_or_else(|err| {
+                    eprintln!("Error, could not get subtasks: {}", err);
+                    exit(1);
+                });
             let subtask = subtasks.get(index.wrapping_sub(1)).unwrap_or_else(|| {
                 eprintln!("Invalid subtask for this story");
                 exit(1);
             });
 
-            // DELETE on Taiga returns 204 with no body - a successful
-            // delete has nothing further to update here.
             if taiga.delete_subtask(subtask.id).is_err() {
                 eprintln!("Error, could not delete subtask");
                 exit(1);
@@ -985,7 +902,6 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) {
 }
 
 pub fn taiga_team(taiga: &mut Taiga, args: TeamTaskArgs) {
-    // getting necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
@@ -993,7 +909,6 @@ pub fn taiga_team(taiga: &mut Taiga, args: TeamTaskArgs) {
     let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
     let task = tasks.get_task(args.id);
 
-    // pushing the change
     if let Ok(new_task) = taiga.team_task(task.id, args.remove, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -1004,7 +919,6 @@ pub fn taiga_team(taiga: &mut Taiga, args: TeamTaskArgs) {
 }
 
 pub fn taiga_client(taiga: &mut Taiga, args: ClientTaskArgs) {
-    // getting necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
@@ -1012,7 +926,6 @@ pub fn taiga_client(taiga: &mut Taiga, args: ClientTaskArgs) {
     let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
     let task = tasks.get_task(args.id);
 
-    // pushing the change
     if let Ok(new_task) = taiga.client_task(task.id, args.remove, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -1023,7 +936,6 @@ pub fn taiga_client(taiga: &mut Taiga, args: ClientTaskArgs) {
 }
 
 pub fn taiga_block(taiga: &mut Taiga, args: BlockTaskArgs) {
-    // getting necessary information
     let project = taiga.find_project(args.project).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
@@ -1031,7 +943,6 @@ pub fn taiga_block(taiga: &mut Taiga, args: BlockTaskArgs) {
     let mut tasks = taiga.tasks_from_cache(project.id, |_| false);
     let task = tasks.get_task(args.id);
 
-    // pushing the change
     if let Ok(new_task) = taiga.block_task(task.id, args.remove, task.version) {
         *task = new_task;
         tasks.save_cache();
@@ -1053,11 +964,7 @@ pub fn taiga_modify(taiga: &mut Taiga, args: ModifyTaskArgs) {
             }
         }
         if let Some(Some(sprint)) = &args.sprint {
-            if !tasks
-                .sprints
-                .iter()
-                .any(|s| s.slug == *sprint || s.name == *sprint)
-            {
+            if tasks.find_sprint(sprint).is_none() {
                 return true;
             }
         }
@@ -1084,18 +991,12 @@ pub fn taiga_modify(taiga: &mut Taiga, args: ModifyTaskArgs) {
     let sprint_id: Option<Option<i32>> = match &args.sprint {
         None => None,
         Some(None) => Some(None),
-        Some(Some(sprint)) => {
-            if let Some(sprint) = tasks
-                .sprints
-                .iter()
-                .find(|s| s.slug == *sprint || s.name == *sprint)
-            {
-                Some(Some(sprint.id))
-            } else {
+        Some(Some(sprint)) => Some(Some(
+            tasks.find_sprint(sprint).map(|s| s.id).unwrap_or_else(|| {
                 eprintln!("Error, could not find given sprint");
                 exit(1);
-            }
-        }
+            }),
+        )),
     };
 
     let mut assigned_ids = Vec::new();
@@ -1201,12 +1102,10 @@ fn format_due(due: &DateTime<Utc>) -> String {
     let now = Utc::now();
     let duration = due.signed_duration_since(now);
 
-    // Check if the duration is negative, indicating the due date is in the past
     let is_past = duration.num_seconds() < 0;
-    let duration = duration.abs(); // Work with absolute value for formatting
+    let duration = duration.abs();
 
     if duration.num_days() >= 365 {
-        // format!("{}y{}", duration.num_days() / 365, if is_past { " ago" } else { "" })
         format!(
             "{}{}y",
             if is_past { "-" } else { "" },

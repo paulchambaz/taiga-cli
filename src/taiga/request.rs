@@ -6,72 +6,48 @@ use serde::{de::DeserializeOwned, Serialize};
 use super::Taiga;
 
 impl Taiga {
-    // Core request function that handles retries and authentication
-    fn request<T, R>(&mut self, mut builder: RequestBuilder, body: Option<&T>) -> Result<R>
+    fn send<T>(&mut self, mut builder: RequestBuilder, body: Option<&T>) -> Result<Response>
+    where
+        T: Serialize + ?Sized,
+    {
+        let response = self.execute_request(builder.try_clone().unwrap(), body)?;
+
+        if response.status().is_success() {
+            return Ok(response);
+        }
+
+        if let Ok(()) = self.refresh() {
+            builder = self.add_auth_header(builder.try_clone().unwrap())?;
+            let response = self.execute_request(builder.try_clone().unwrap(), body)?;
+
+            if response.status().is_success() {
+                return Ok(response);
+            }
+        }
+
+        self.reauth()?;
+        builder = self.add_auth_header(builder.try_clone().unwrap())?;
+        let response = self.execute_request(builder, body)?;
+
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            Err(anyhow!("Request failed after all retry attempts"))
+        }
+    }
+
+    fn request<T, R>(&mut self, builder: RequestBuilder, body: Option<&T>) -> Result<R>
     where
         T: Serialize + ?Sized,
         R: DeserializeOwned,
     {
-        // First attempt - with current token
-        let mut response = self.execute_request(builder.try_clone().unwrap(), body)?;
-
-        if response.status().is_success() {
-            return response.json().map_err(|e| anyhow!(e));
-        }
-
-        // Second attempt - try refreshing token
-        if let Ok(()) = self.refresh() {
-            builder = self.add_auth_header(builder.try_clone().unwrap())?;
-            response = self.execute_request(builder.try_clone().unwrap(), body)?;
-
-            if response.status().is_success() {
-                return response.json().map_err(|e| anyhow!(e));
-            }
-        }
-
-        // Final attempt - full reauth
-        self.reauth()?;
-        builder = self.add_auth_header(builder.try_clone().unwrap())?;
-        response = self.execute_request(builder, body)?;
-
-        if response.status().is_success() {
-            response.json().map_err(|e| anyhow!(e))
-        } else {
-            Err(anyhow!("Request failed after all retry attempts"))
-        }
+        self.send(builder, body)?.json().map_err(|e| anyhow!(e))
     }
 
-    // Same retry/auth flow as `request`, but for responses with no body to
-    // parse (e.g. a 204 from DELETE) - `request` would fail to `.json()` an
-    // empty body even on a successful request.
-    fn request_no_content(&mut self, mut builder: RequestBuilder) -> Result<()> {
-        let mut response = self.execute_request::<()>(builder.try_clone().unwrap(), None)?;
-
-        if response.status().is_success() {
-            return Ok(());
-        }
-
-        if let Ok(()) = self.refresh() {
-            builder = self.add_auth_header(builder.try_clone().unwrap())?;
-            response = self.execute_request::<()>(builder.try_clone().unwrap(), None)?;
-
-            if response.status().is_success() {
-                return Ok(());
-            }
-        }
-
-        self.reauth()?;
-        builder = self.add_auth_header(builder.try_clone().unwrap())?;
-        response = self.execute_request::<()>(builder, None)?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(anyhow!("Request failed after all retry attempts"))
-        }
+    fn request_no_content(&mut self, builder: RequestBuilder) -> Result<()> {
+        self.send::<()>(builder, None).map(|_| ())
     }
 
-    // Helper to execute a single request attempt
     fn execute_request<T>(&self, builder: RequestBuilder, body: Option<&T>) -> Result<Response>
     where
         T: Serialize + ?Sized,
@@ -85,7 +61,6 @@ impl Taiga {
         request.send().map_err(|e| anyhow!(e))
     }
 
-    // Add auth header to a request
     fn add_auth_header(&self, builder: RequestBuilder) -> Result<RequestBuilder> {
         Ok(builder.header(
             AUTHORIZATION,
@@ -93,7 +68,6 @@ impl Taiga {
         ))
     }
 
-    // High-level request methods that use the core request function
     pub fn get<R>(&mut self, endpoint: &str) -> Result<R>
     where
         R: DeserializeOwned,

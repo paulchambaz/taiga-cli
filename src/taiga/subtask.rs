@@ -1,13 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::{Taiga, TaigaStatus};
+use super::Taiga;
 use crate::utils::slug;
 
-// A Taiga "Task" nested under a User Story - named TaigaSubtask here to
-// avoid colliding with TaigaTask, which this CLI already uses to mean a
-// User Story (see README: every top-level "task" command in this tool is a
-// Taiga user story, not a Taiga task).
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaigaSubtask {
     pub id: i32,
@@ -38,14 +34,6 @@ struct TaskStatusInfo {
     name: String,
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(dead_code)]
-struct TaskStatusResponse {
-    id: i32,
-    slug: String,
-    is_closed: bool,
-}
-
 #[derive(Debug, Serialize)]
 struct SubtaskNewRequest {
     project: i32,
@@ -63,19 +51,6 @@ struct SubtaskDescribeRequest {
 }
 
 impl Taiga {
-    pub fn get_task_statuses(&mut self, project_id: i32) -> Result<Vec<TaigaStatus>> {
-        self.get::<Vec<TaskStatusResponse>>(&format!("/task-statuses?project={}", project_id))
-            .map(|ss| {
-                ss.iter()
-                    .map(|s| TaigaStatus {
-                        id: s.id,
-                        slug: s.slug.clone(),
-                        is_closed: s.is_closed,
-                    })
-                    .collect()
-            })
-    }
-
     pub fn get_subtasks(
         &mut self,
         project_id: i32,
@@ -88,9 +63,6 @@ impl Taiga {
         .map(|ts| ts.iter().map(TaigaSubtask::new).collect())
     }
 
-    // The list endpoint above uses Taiga's lean list serializer, which
-    // omits `description` - only the single-object detail endpoint
-    // includes it.
     pub fn get_subtask(&mut self, id: i32) -> Result<TaigaSubtask> {
         self.get::<TaskResponse>(&format!("/tasks/{}", id))
             .map(|t| TaigaSubtask::new(&t))
@@ -127,7 +99,10 @@ impl Taiga {
     ) -> Result<TaigaSubtask> {
         self.patch::<SubtaskDescribeRequest, TaskResponse>(
             &format!("/tasks/{}", id),
-            &SubtaskDescribeRequest { description, version },
+            &SubtaskDescribeRequest {
+                description,
+                version,
+            },
         )
         .map(|t| TaigaSubtask::new(&t))
     }

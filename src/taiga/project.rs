@@ -13,6 +13,7 @@ pub struct TaigaProject {
     pub name: String,
     pub members: Vec<TaigaUser>,
     pub statuses: Vec<TaigaStatus>,
+    pub task_statuses: Vec<TaigaStatus>,
     pub sprints: Vec<TaigaSprint>,
 }
 
@@ -29,6 +30,7 @@ struct ProjectResponse {
     name: String,
     members: Vec<MemberResponse>,
     us_statuses: Vec<Status>,
+    task_statuses: Vec<Status>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -72,6 +74,7 @@ impl Taiga {
                         name: p.name.clone(),
                         members: Vec::new(),
                         statuses: Vec::new(),
+                        task_statuses: Vec::new(),
                         sprints: Vec::new(),
                     })
                     .collect()
@@ -80,9 +83,17 @@ impl Taiga {
 
     pub fn get_project(&mut self, id: i32) -> Result<TaigaProject> {
         let p = self.get::<ProjectResponse>(&format!("/projects/{}", id))?;
-        // Sprints (Taiga calls them milestones) aren't embedded in the
-        // project response, unlike statuses/members - fetch separately.
         let sprints = self.get_milestones(id)?;
+        let to_statuses = |statuses: &[Status]| -> Vec<TaigaStatus> {
+            statuses
+                .iter()
+                .map(|status| TaigaStatus {
+                    id: status.id,
+                    slug: status.slug.clone(),
+                    is_closed: status.is_closed,
+                })
+                .collect()
+        };
 
         Ok(TaigaProject {
             id: p.id,
@@ -95,15 +106,8 @@ impl Taiga {
                     username: member.username.clone(),
                 })
                 .collect(),
-            statuses: p
-                .us_statuses
-                .iter()
-                .map(|status| TaigaStatus {
-                    id: status.id,
-                    slug: status.slug.clone(),
-                    is_closed: status.is_closed,
-                })
-                .collect(),
+            statuses: to_statuses(&p.us_statuses),
+            task_statuses: to_statuses(&p.task_statuses),
             sprints,
         })
     }

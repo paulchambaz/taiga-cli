@@ -90,7 +90,6 @@ impl Taiga {
         Ok(taiga)
     }
 
-    // Token refresh
     pub fn refresh(&mut self) -> Result<()> {
         let client = Client::new();
         let refresh_request = serde_json::json!({
@@ -117,7 +116,6 @@ impl Taiga {
         Ok(())
     }
 
-    // Full reauthorization using stored credentials
     pub fn reauth(&mut self) -> Result<()> {
         let client = Client::new();
         let auth_request = AuthRequest {

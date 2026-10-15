@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
-use super::{Taiga, TaigaProject, TaigaTask, TaigaTasks};
+use super::{Taiga, TaigaProject, TaigaSprint, TaigaTask, TaigaTasks};
 
 impl Taiga {
     pub fn from_cache() -> Option<Self> {
@@ -43,7 +43,6 @@ impl Taiga {
         let cache_path =
             Self::get_cache_path().ok_or_else(|| anyhow!("Could not determine cache directory"))?;
 
-        // Ensure cache directory exists
         if let Some(parent) = cache_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -57,7 +56,6 @@ impl Taiga {
         file.write_all(&serialized)
             .map_err(|e| anyhow!("Failed to write config: {}", e))?;
 
-        // Set appropriate file permissions
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -94,7 +92,7 @@ impl Taiga {
                 }
             }
             _ => {
-                eprintln!("Invalid task id for this project");
+                eprintln!("No cached tasks for this project, run search first");
                 exit(1);
             }
         }
@@ -102,7 +100,6 @@ impl Taiga {
 }
 
 impl TaigaProject {
-    // Get cache file path for a project ID
     fn cache_path(id: i32) -> Result<PathBuf> {
         let project_dirs =
             ProjectDirs::from("", "", "taiga").context("Could not get standard directories")?;
@@ -117,7 +114,6 @@ impl TaigaProject {
         Ok(cache_dir.join(hash))
     }
 
-    // Load project from cache
     pub fn from_cache(id: i32) -> Result<Option<Self>> {
         let path = Self::cache_path(id)?;
 
@@ -136,7 +132,6 @@ impl TaigaProject {
             .map(Some)
     }
 
-    // Save project to cache
     pub fn save_cache(&self) -> Result<()> {
         let path = Self::cache_path(self.id)?;
 
@@ -160,6 +155,12 @@ impl TaigaTasks {
         })
     }
 
+    pub fn find_sprint(&self, name: &str) -> Option<&TaigaSprint> {
+        self.sprints
+            .iter()
+            .find(|s| s.slug == name || s.name == name)
+    }
+
     pub fn from_cache(id: i32) -> Option<Self> {
         let project_dirs = ProjectDirs::from("", "", "taiga").unwrap_or_else(|| {
             eprintln!("Could not get standard directories");
@@ -178,14 +179,11 @@ impl TaigaTasks {
             return None;
         }
 
-        let mut file = File::open(&path).expect("Could not open cache file");
+        let mut file = File::open(&path).ok()?;
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
-            .expect("Could not read cache file");
-        let tasks =
-            bincode::deserialize::<Self>(&buffer[..]).expect("Could not deserialize cache file");
+        file.read_to_end(&mut buffer).ok()?;
 
-        Some(tasks)
+        bincode::deserialize::<Self>(&buffer[..]).ok()
     }
 
     pub fn save_cache(self) {

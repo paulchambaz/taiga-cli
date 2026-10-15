@@ -29,6 +29,7 @@ pub struct TaigaTasks {
     pub tasks: Vec<TaigaTask>,
     pub members: Vec<TaigaUser>,
     pub statuses: Vec<TaigaStatus>,
+    pub task_statuses: Vec<TaigaStatus>,
     pub sprints: Vec<TaigaSprint>,
 }
 
@@ -305,6 +306,7 @@ impl Taiga {
             tasks: tasks.tasks.clone(),
             members: project.members,
             statuses: project.statuses,
+            task_statuses: project.task_statuses,
             sprints: project.sprints,
         };
 
