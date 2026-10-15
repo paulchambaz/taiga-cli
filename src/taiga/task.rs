@@ -41,76 +41,43 @@ struct UserStoryStatus {
     name: String,
 }
 
-#[derive(Debug, Serialize)]
-struct TaskStatusRequest {
-    status: i32,
-    version: i32,
+/// A partial update of a user story: only the set fields are sent.
+///
+/// `Some(None)` on `due_date` or `milestone` clears the field on the server.
+#[derive(Debug, Default, Serialize)]
+pub struct TaskPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_users: Option<Vec<i32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_requirement: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_requirement: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_blocked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub milestone: Option<Option<i32>>,
+    pub version: i32,
 }
 
+/// A user story to create.
 #[derive(Debug, Serialize)]
-struct TaskRenameRequest {
-    subject: String,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskAssignRequest {
-    assigned_users: Vec<i32>,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskDueRequest {
-    due_date: Option<String>,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskTeamRequest {
-    team_requirement: bool,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskClientRequest {
-    client_requirement: bool,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskBlockRequest {
-    is_blocked: bool,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskModifyRequest {
-    status: i32,
-    subject: String,
-    assigned_users: Vec<i32>,
-    due_date: Option<String>,
-    team_requirement: bool,
-    client_requirement: bool,
-    is_blocked: bool,
-    milestone: Option<i32>,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskSprintRequest {
-    milestone: Option<i32>,
-    version: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct TaskNewRequest {
-    assigned_to: Option<i32>,
-    client_requirement: bool,
-    is_blocked: bool,
-    project: i32,
-    status: i32,
-    subject: String,
-    team_requirement: bool,
+pub struct TaskNew {
+    pub project: i32,
+    pub status: i32,
+    pub subject: String,
+    pub assigned_to: Option<i32>,
+    pub assigned_users: Vec<i32>,
+    pub due_date: Option<String>,
+    pub milestone: Option<i32>,
+    pub team_requirement: bool,
+    pub client_requirement: bool,
+    pub is_blocked: bool,
 }
 
 impl Taiga {
@@ -122,164 +89,26 @@ impl Taiga {
         .map(|ts| ts.iter().map(TaigaTask::new).collect())
     }
 
-    pub fn move_task(&mut self, task_id: i32, status_id: i32, version: i32) -> Result<TaigaTask> {
-        self.patch::<TaskStatusRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskStatusRequest {
-                status: status_id,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
+    /// Applies a partial update to a user story.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails, for example on a version conflict.
+    pub fn patch_task(&mut self, task_id: i32, patch: &TaskPatch) -> Result<TaigaTask> {
+        self.patch::<TaskPatch, UserStory>(&format!("/userstories/{task_id}"), patch)
+            .map(|t| TaigaTask::new(&t))
     }
 
     pub fn delete_task(&mut self, task_id: i32) -> Result<()> {
         self.delete(&format!("/userstories/{}", task_id))
-            .map(|_| ())
     }
 
-    pub fn rename_task(&mut self, task_id: i32, name: String, version: i32) -> Result<TaigaTask> {
-        self.patch::<TaskRenameRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskRenameRequest {
-                subject: name,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn assign_task(
-        &mut self,
-        task_id: i32,
-        assign: Vec<i32>,
-        version: i32,
-    ) -> Result<TaigaTask> {
-        self.patch::<TaskAssignRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskAssignRequest {
-                assigned_users: assign,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn due_task(
-        &mut self,
-        task_id: i32,
-        due: Option<String>,
-        version: i32,
-    ) -> Result<TaigaTask> {
-        self.patch::<TaskDueRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskDueRequest {
-                due_date: due,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn team_task(&mut self, task_id: i32, remove: bool, version: i32) -> Result<TaigaTask> {
-        self.patch::<TaskTeamRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskTeamRequest {
-                team_requirement: !remove,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn client_task(&mut self, task_id: i32, remove: bool, version: i32) -> Result<TaigaTask> {
-        self.patch::<TaskClientRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskClientRequest {
-                client_requirement: !remove,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn block_task(&mut self, task_id: i32, remove: bool, version: i32) -> Result<TaigaTask> {
-        self.patch::<TaskBlockRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskBlockRequest {
-                is_blocked: !remove,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn modify_task(
-        &mut self,
-        task_id: i32,
-        status: i32,
-        rename: String,
-        assign: Vec<i32>,
-        due_date: Option<String>,
-        team: bool,
-        client: bool,
-        block: bool,
-        sprint: Option<i32>,
-        version: i32,
-    ) -> Result<TaigaTask> {
-        self.patch::<TaskModifyRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskModifyRequest {
-                status,
-                subject: rename,
-                assigned_users: assign,
-                due_date,
-                team_requirement: team,
-                client_requirement: client,
-                is_blocked: block,
-                milestone: sprint,
-                version,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn sprint_task(
-        &mut self,
-        task_id: i32,
-        milestone: Option<i32>,
-        version: i32,
-    ) -> Result<TaigaTask> {
-        self.patch::<TaskSprintRequest, UserStory>(
-            &format!("/userstories/{}", task_id),
-            &TaskSprintRequest { milestone, version },
-        )
-        .map(|t| TaigaTask::new(&t))
-    }
-
-    pub fn new_task(
-        &mut self,
-        project_id: i32,
-        status: i32,
-        name: String,
-        assign: Vec<i32>,
-        team: bool,
-        client: bool,
-        block: bool,
-    ) -> Result<TaigaTask> {
-        self.post::<TaskNewRequest, UserStory>(
-            "/userstories",
-            &TaskNewRequest {
-                project: project_id,
-                status,
-                subject: name,
-                assigned_to: assign.first().copied(),
-                team_requirement: team,
-                client_requirement: client,
-                is_blocked: block,
-            },
-        )
-        .map(|t| TaigaTask::new(&t))
+    /// Creates a user story in a single request.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails.
+    pub fn new_task(&mut self, task: &TaskNew) -> Result<TaigaTask> {
+        self.post::<TaskNew, UserStory>("/userstories", task)
+            .map(|t| TaigaTask::new(&t))
     }
 }
 
@@ -300,7 +129,7 @@ impl TaigaTask {
                 .and_then(|date| date.parse::<NaiveDate>().ok())
                 .and_then(|date| date.and_hms_opt(0, 0, 0))
                 .map(|dt| Utc.from_utc_datetime(&dt)),
-            closed: false,
+            closed: t.is_closed,
             version: t.version,
             sprint_id: t.milestone,
         }

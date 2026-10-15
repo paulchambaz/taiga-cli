@@ -179,7 +179,9 @@ pub fn help_message(project: &str, verb: &str, id: Option<usize>) -> HelpMessage
                 [
                     ("status:<STATUS>", "The status to move the task to"),
                     ("@<USERNAME>", "The user to assign the task to"),
+                    ("-@<USERNAME>", "The user to take off the task"),
                     ("due:<DATE>", "The due date to give to the task"),
+                    ("-due", "Remove the due date of the task"),
                     ("sprint:<SPRINT>", "The sprint to put the task in"),
                     ("-sprint", "Take the task out of its sprint"),
                     ("+/-team", "Add or remove the team requirement"),

@@ -102,15 +102,16 @@ pub struct ToggleTaskArgs {
     pub remove: bool,
 }
 
-/// Arguments of `modify`; `None` leaves the field untouched.
+/// Arguments of `modify`; `None` leaves a field untouched and `Some(None)` clears it.
 #[derive(Debug)]
 pub struct ModifyTaskArgs {
     pub project: String,
     pub id: usize,
     pub status: Option<String>,
     pub rename: Option<String>,
-    pub assign: Option<Vec<String>>,
-    pub due_date: Option<String>,
+    pub assign: Vec<String>,
+    pub unassign: Vec<String>,
+    pub due_date: Option<Option<String>>,
     pub team: Option<bool>,
     pub client: Option<bool>,
     pub block: Option<bool>,

@@ -47,6 +47,17 @@ impl Taiga {
         check(self.attempt(&method, endpoint, body)?)
     }
 
+    /// Fetches once, without refreshing the token, so it can run from several threads.
+    ///
+    /// # Errors
+    /// Returns an error when the request fails or the token is no longer valid.
+    pub fn get_once<R>(&self, endpoint: &str) -> Result<R>
+    where
+        R: DeserializeOwned,
+    {
+        Ok(check(self.attempt::<()>(&Method::GET, endpoint, None)?)?.json()?)
+    }
+
     pub fn get<R>(&mut self, endpoint: &str) -> Result<R>
     where
         R: DeserializeOwned,

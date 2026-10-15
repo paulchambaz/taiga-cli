@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::panic::resume_unwind;
+use std::thread;
 
 use super::{Result, Taiga};
 use crate::utils::slug;
@@ -62,9 +64,40 @@ impl Taiga {
         .map(|ts| ts.iter().map(TaigaSubtask::new).collect())
     }
 
-    pub fn get_subtask(&mut self, id: i32) -> Result<TaigaSubtask> {
-        self.get::<TaskResponse>(&format!("/tasks/{}", id))
-            .map(|t| TaigaSubtask::new(&t))
+    /// Lists the subtasks of a story with their descriptions, which only the detail view has.
+    ///
+    /// The detail requests run in parallel, right after the list request has checked the token.
+    ///
+    /// # Errors
+    /// Returns an error when any of the requests fails.
+    pub fn get_described_subtasks(
+        &mut self,
+        project_id: i32,
+        user_story_id: i32,
+    ) -> Result<Vec<TaigaSubtask>> {
+        let subtasks = self.get_subtasks(project_id, user_story_id)?;
+        let taiga = &*self;
+
+        thread::scope(|scope| {
+            let requests: Vec<_> = subtasks
+                .iter()
+                .map(|subtask| {
+                    scope.spawn(move || {
+                        taiga.get_once::<TaskResponse>(&format!("/tasks/{}", subtask.id))
+                    })
+                })
+                .collect();
+
+            requests
+                .into_iter()
+                .map(|request| {
+                    request
+                        .join()
+                        .unwrap_or_else(|panic| resume_unwind(panic))
+                        .map(|t| TaigaSubtask::new(&t))
+                })
+                .collect()
+        })
     }
 
     pub fn new_subtask(

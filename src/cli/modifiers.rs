@@ -22,6 +22,7 @@ struct Modifiers {
     clients: Vec<bool>,
     blocks: Vec<bool>,
     no_sprint: bool,
+    no_due: bool,
     words: Vec<String>,
 }
 
@@ -63,6 +64,7 @@ fn parse_modifiers(args: &[String], kind: Kind) -> Option<Modifiers> {
 /// Records one modifier; `Some(false)` means the argument is a plain word.
 fn add_modifier(modifiers: &mut Modifiers, arg: &str, kind: Kind) -> Option<bool> {
     let search = kind == Kind::Search;
+    let removing = kind != Kind::New;
     let value = |prefixes: &[&str]| {
         prefixes
             .iter()
@@ -76,7 +78,7 @@ fn add_modifier(modifiers: &mut Modifiers, arg: &str, kind: Kind) -> Option<bool
         modifiers.not_statuses.push(status);
     } else if let Some(username) = value(&["@"]) {
         modifiers.assigned.push(username);
-    } else if let Some(username) = value(&["-@"]).filter(|_| search) {
+    } else if let Some(username) = value(&["-@"]).filter(|_| removing) {
         modifiers.not_assigned.push(username);
     } else if let Some(due) = value(&["due:"]) {
         modifiers.dues.push(due);
@@ -86,6 +88,8 @@ fn add_modifier(modifiers: &mut Modifiers, arg: &str, kind: Kind) -> Option<bool
         modifiers.sprints.push(sprint);
     } else if arg == "-sprint" && kind == Kind::Modify {
         modifiers.no_sprint = true;
+    } else if arg == "-due" && kind == Kind::Modify {
+        modifiers.no_due = true;
     } else if matches!(
         arg,
         "+team" | "-team" | "+client" | "-client" | "+block" | "-block"
@@ -160,13 +164,21 @@ pub fn parse_modify(project: &str, id: usize, args: &[String]) -> Option<TaigaCm
         (None, false) => None,
     };
 
+    let due_date = match (due_date(modifiers.dues, false)?, modifiers.no_due) {
+        (Some(_), true) => return None,
+        (Some(due), false) => Some(Some(due)),
+        (None, true) => Some(None),
+        (None, false) => None,
+    };
+
     Some(TaigaCmd::ModifyTask(ModifyTaskArgs {
         project: project.to_string(),
         id,
         status: single(modifiers.statuses)?,
         rename: (!modifiers.words.is_empty()).then(|| modifiers.words.join(" ")),
-        assign: (!modifiers.assigned.is_empty()).then_some(modifiers.assigned),
-        due_date: due_date(modifiers.dues, false)?,
+        assign: modifiers.assigned,
+        unassign: modifiers.not_assigned,
+        due_date,
         team: single(modifiers.teams)?,
         client: single(modifiers.clients)?,
         block: single(modifiers.blocks)?,

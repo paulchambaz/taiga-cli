@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, stdin, Write};
 
 use super::request::check;
-use super::taiga::Taiga;
-use super::Result;
+use super::{Result, Taiga};
 
 #[derive(Serialize, Debug)]
 pub struct AuthRequest {
