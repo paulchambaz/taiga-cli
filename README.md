@@ -12,7 +12,7 @@ There are a couple ways to install this project. First, it is hosted on crates.i
 
 ### Manual
 
-To install the project manually, please consult the [**Building**](#Building) section.
+To install the project manually, please consult the [**Building**](#building) section.
 
 ### Nix
 
@@ -60,7 +60,7 @@ Options:
   --version          Print the version and exit
 ```
 
-*Do note that demo is a placehold and that your actual taiga project will be listed in the projects section.*
+*Do note that demo is a placeholder and that your actual taiga project will be listed in the projects section.*
 
 ## Building
 
@@ -79,7 +79,7 @@ just --list # to list the dev commands
 
 ### Manual
 
-If you want to manually build the project, it isn't to hard either.
+If you want to manually build the project, it isn't too hard either.
 
 You will need `scdoc` in order to build the man page and `just` to run the dev commands.
 
@@ -97,4 +97,10 @@ Contributions to taiga-cli are welcome. Whether it's feature suggestions, bug re
 
 ## License
 
-taiga-cli is released under the GPLv3 License. For more details, refer to the LICENSE file included in the repository.
+<a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
+  <img src="https://www.gnu.org/graphics/gplv3-127x51.png" alt="GNU GPLv3" />
+</a>
+
+taiga-cli is free software. You can use, study, modify and distribute it under the
+terms of the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.en.html),
+version 3.

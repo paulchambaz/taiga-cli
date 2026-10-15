@@ -1,7 +1,7 @@
 use std::process::exit;
 
 use anyhow::Result;
-use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{Taiga, TaigaSprint, TaigaStatus, TaigaUser};

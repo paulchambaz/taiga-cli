@@ -24,7 +24,6 @@ pub struct ProjectsResponse {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 struct ProjectResponse {
     id: i32,
     name: String,
@@ -34,14 +33,12 @@ struct ProjectResponse {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 struct MemberResponse {
     id: i32,
     username: String,
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 struct Status {
     id: i32,
     slug: String,
@@ -49,7 +46,6 @@ struct Status {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 struct MilestoneResponse {
     id: i32,
     name: String,

@@ -11,11 +11,6 @@ pub struct LoginArgs {
 }
 
 #[derive(Debug)]
-pub struct ProjectArgs {
-    pub project: String,
-}
-
-#[derive(Debug)]
 pub struct NewTaskArgs {
     pub project: String,
     pub status: Option<String>,

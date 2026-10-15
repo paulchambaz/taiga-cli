@@ -1,6 +1,8 @@
 /target
-/result
+/result*
 /.direnv
 *.profraw
-tarpaulin*
-*.bin
+/tarpaulin-report.html
+/cobertura.xml
+*.md
+!README.md
