@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{Taiga, TaigaStatus, TaigaUser};
+use super::{Taiga, TaigaSprint, TaigaStatus, TaigaUser};
 use crate::utils::slug;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -20,6 +20,7 @@ pub struct TaigaTask {
     pub due: Option<DateTime<Utc>>,
     pub closed: bool,
     pub version: i32,
+    pub sprint_id: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -28,6 +29,7 @@ pub struct TaigaTasks {
     pub tasks: Vec<TaigaTask>,
     pub members: Vec<TaigaUser>,
     pub statuses: Vec<TaigaStatus>,
+    pub sprints: Vec<TaigaSprint>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -43,6 +45,7 @@ struct UserStory {
     due_date: Option<String>,
     is_closed: bool,
     version: i32,
+    milestone: Option<i32>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -101,6 +104,13 @@ struct TaskModifyRequest {
     team_requirement: bool,
     client_requirement: bool,
     is_blocked: bool,
+    milestone: Option<i32>,
+    version: i32,
+}
+
+#[derive(Debug, Serialize)]
+struct TaskSprintRequest {
+    milestone: Option<i32>,
     version: i32,
 }
 
@@ -226,6 +236,7 @@ impl Taiga {
         team: bool,
         client: bool,
         block: bool,
+        sprint: Option<i32>,
         version: i32,
     ) -> Result<TaigaTask> {
         self.patch::<TaskModifyRequest, UserStory>(
@@ -238,8 +249,22 @@ impl Taiga {
                 team_requirement: team,
                 client_requirement: client,
                 is_blocked: block,
+                milestone: sprint,
                 version,
             },
+        )
+        .map(|t| TaigaTask::new(&t))
+    }
+
+    pub fn sprint_task(
+        &mut self,
+        task_id: i32,
+        milestone: Option<i32>,
+        version: i32,
+    ) -> Result<TaigaTask> {
+        self.patch::<TaskSprintRequest, UserStory>(
+            &format!("/userstories/{}", task_id),
+            &TaskSprintRequest { milestone, version },
         )
         .map(|t| TaigaTask::new(&t))
     }
@@ -280,6 +305,7 @@ impl Taiga {
             tasks: tasks.tasks.clone(),
             members: project.members,
             statuses: project.statuses,
+            sprints: project.sprints,
         };
 
         tasks.clone().save_cache();
@@ -307,6 +333,7 @@ impl TaigaTask {
             }),
             closed: false,
             version: t.version,
+            sprint_id: t.milestone,
         }
     }
 }

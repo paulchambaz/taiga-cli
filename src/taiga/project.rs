@@ -3,6 +3,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use super::Taiga;
+use super::TaigaSprint;
 use super::TaigaStatus;
 use super::TaigaUser;
 
@@ -12,6 +13,7 @@ pub struct TaigaProject {
     pub name: String,
     pub members: Vec<TaigaUser>,
     pub statuses: Vec<TaigaStatus>,
+    pub sprints: Vec<TaigaSprint>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -44,6 +46,14 @@ struct Status {
     is_closed: bool,
 }
 
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct MilestoneResponse {
+    id: i32,
+    name: String,
+    slug: String,
+}
+
 impl Taiga {
     pub fn find_project(&mut self, name: String) -> Result<TaigaProject> {
         self.projects
@@ -62,33 +72,52 @@ impl Taiga {
                         name: p.name.clone(),
                         members: Vec::new(),
                         statuses: Vec::new(),
+                        sprints: Vec::new(),
                     })
                     .collect()
             })
     }
 
     pub fn get_project(&mut self, id: i32) -> Result<TaigaProject> {
-        self.get::<ProjectResponse>(&format!("/projects/{}", id))
-            .map(|p| TaigaProject {
-                id: p.id,
-                name: p.name.clone(),
-                members: p
-                    .members
-                    .iter()
-                    .map(|member| TaigaUser {
-                        id: member.id,
-                        username: member.username.clone(),
+        let p = self.get::<ProjectResponse>(&format!("/projects/{}", id))?;
+        // Sprints (Taiga calls them milestones) aren't embedded in the
+        // project response, unlike statuses/members - fetch separately.
+        let sprints = self.get_milestones(id)?;
+
+        Ok(TaigaProject {
+            id: p.id,
+            name: p.name.clone(),
+            members: p
+                .members
+                .iter()
+                .map(|member| TaigaUser {
+                    id: member.id,
+                    username: member.username.clone(),
+                })
+                .collect(),
+            statuses: p
+                .us_statuses
+                .iter()
+                .map(|status| TaigaStatus {
+                    id: status.id,
+                    slug: status.slug.clone(),
+                    is_closed: status.is_closed,
+                })
+                .collect(),
+            sprints,
+        })
+    }
+
+    pub fn get_milestones(&mut self, project_id: i32) -> Result<Vec<TaigaSprint>> {
+        self.get::<Vec<MilestoneResponse>>(&format!("/milestones?project={}", project_id))
+            .map(|ms| {
+                ms.iter()
+                    .map(|m| TaigaSprint {
+                        id: m.id,
+                        name: m.name.clone(),
+                        slug: m.slug.clone(),
                     })
-                    .collect(),
-                statuses: p
-                    .us_statuses
-                    .iter()
-                    .map(|status| TaigaStatus {
-                        id: status.id,
-                        slug: status.slug.clone(),
-                        is_closed: status.is_closed,
-                    })
-                    .collect(),
+                    .collect()
             })
     }
 }

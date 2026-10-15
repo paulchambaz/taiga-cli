@@ -25,6 +25,7 @@ pub struct NewTaskArgs {
     pub team: bool,
     pub client: bool,
     pub block: bool,
+    pub sprint: Option<String>,
 }
 
 #[derive(Debug)]
@@ -63,6 +64,38 @@ pub struct DueTaskArgs {
 }
 
 #[derive(Debug)]
+pub struct SprintTaskArgs {
+    pub project: String,
+    pub id: usize,
+    pub sprint: Option<String>,
+    pub remove: bool,
+}
+
+#[derive(Debug)]
+pub enum SubtaskAction {
+    New {
+        name: String,
+        description: String,
+        assign: Option<String>,
+    },
+    List,
+    Describe {
+        index: usize,
+        description: String,
+    },
+    Delete {
+        index: usize,
+    },
+}
+
+#[derive(Debug)]
+pub struct SubtaskArgs {
+    pub project: String,
+    pub story_id: usize,
+    pub action: SubtaskAction,
+}
+
+#[derive(Debug)]
 pub struct TeamTaskArgs {
     pub project: String,
     pub id: usize,
@@ -94,6 +127,9 @@ pub struct ModifyTaskArgs {
     pub team: Option<bool>,
     pub client: Option<bool>,
     pub block: Option<bool>,
+    // None = leave the sprint alone, Some(None) = take it out of its sprint,
+    // Some(Some(name)) = put it in the named sprint.
+    pub sprint: Option<Option<String>>,
 }
 
 #[derive(Debug)]
@@ -103,6 +139,8 @@ pub struct SearchTaskArgs {
     pub exclude_statuses: Vec<String>,
     pub include_assigned: Vec<String>,
     pub exclude_assigned: Vec<String>,
+    pub include_sprints: Vec<String>,
+    pub exclude_sprints: Vec<String>,
     pub due_date: Option<String>,
     pub team: Option<bool>,
     pub client: Option<bool>,
@@ -137,6 +175,8 @@ pub enum TaigaCmd {
     RenameTask(RenameTaskArgs),
     AssignTask(AssignTaskArgs),
     DueTask(DueTaskArgs),
+    SprintTask(SprintTaskArgs),
+    Subtask(SubtaskArgs),
     TeamTask(TeamTaskArgs),
     ClientTask(ClientTaskArgs),
     BlockTask(BlockTaskArgs),
@@ -296,6 +336,22 @@ fn cli_project(project: String, args: &[String]) -> TaigaCmd {
                 exit(1);
             }
         }
+        "sprint" => {
+            if let Some(id) = args.get(1).and_then(|id| id.parse::<usize>().ok()) {
+                cli_project_sprint(project, id, &args[2..])
+            } else {
+                cli_help_project(project);
+                exit(1);
+            }
+        }
+        "subtask" => {
+            if let Some(id) = args.get(1).and_then(|id| id.parse::<usize>().ok()) {
+                cli_project_subtask(project, id, &args[2..])
+            } else {
+                cli_help_project(project);
+                exit(1);
+            }
+        }
         "team" => {
             if let Some(id) = args.get(1).and_then(|id| id.parse::<usize>().ok()) {
                 cli_project_team(project, id, &args[2..])
@@ -352,6 +408,8 @@ fn cli_project(project: String, args: &[String]) -> TaigaCmd {
                         "rename" => cli_project_rename(project, id, &args[2..]),
                         "assign" => cli_project_assign(project, id, &args[2..]),
                         "due" => cli_project_due(project, id, &args[2..]),
+                        "sprint" => cli_project_sprint(project, id, &args[2..]),
+                        "subtask" => cli_project_subtask(project, id, &args[2..]),
                         "team" => cli_project_team(project, id, &args[2..]),
                         "client" => cli_project_client(project, id, &args[2..]),
                         "block" => cli_project_block(project, id, &args[2..]),
@@ -383,6 +441,7 @@ fn cli_project_new(project: String, args: &[String]) -> TaigaCmd {
     let mut statuses = Vec::new();
     let mut assigned = Vec::new();
     let mut dues = Vec::new();
+    let mut sprints = Vec::new();
     let mut teams = Vec::new();
     let mut clients = Vec::new();
     let mut blocks = Vec::new();
@@ -407,6 +466,11 @@ fn cli_project_new(project: String, args: &[String]) -> TaigaCmd {
             }
         } else if arg.starts_with("due:") {
             dues.push(arg);
+            if !others.is_empty() {
+                can_continuous = false;
+            }
+        } else if arg.starts_with("sprint:") {
+            sprints.push(arg);
             if !others.is_empty() {
                 can_continuous = false;
             }
@@ -531,6 +595,23 @@ fn cli_project_new(project: String, args: &[String]) -> TaigaCmd {
         assigned
     };
 
+    let sprint = match sprints.len().cmp(&1) {
+        Ordering::Equal => {
+            let sprint_str = *sprints.first().expect("Could not get sprint");
+            let sprint_rest = &sprint_str["sprint:".len()..];
+            if sprint_rest.is_empty() {
+                cli_project_new_help(project);
+                exit(1);
+            }
+            Some(sprint_rest.to_string())
+        }
+        Ordering::Greater => {
+            cli_project_new_help(project);
+            exit(1);
+        }
+        Ordering::Less => None,
+    };
+
     let name = if others.is_empty() {
         cli_project_new_help(project);
         exit(1);
@@ -547,6 +628,7 @@ fn cli_project_new(project: String, args: &[String]) -> TaigaCmd {
         team,
         client,
         block,
+        sprint,
     })
 }
 
@@ -563,6 +645,7 @@ fn cli_project_new_help(project: String) {
     );
     help_message.add_command("@<USERNAME>", "The user to assign the task to");
     help_message.add_command("due:<DATE>", "The due date to give to the task");
+    help_message.add_command("sprint:<SPRINT>", "The sprint to put the task in");
     help_message.add_command("+/-team", "Set or unset the team requirement");
     help_message.add_command("+/-client", "Set or unset the client requirement");
     help_message.add_command("+/-block", "Set or unset the block");
@@ -820,6 +903,193 @@ fn cli_project_due_help(project: String, id: usize) {
     help_message.display();
 }
 
+fn cli_project_sprint(project: String, id: usize, args: &[String]) -> TaigaCmd {
+    if args.contains(&"--help".to_string()) {
+        cli_project_sprint_help(project, id);
+        exit(0);
+    }
+
+    let mut options = Vec::new();
+    let mut others = Vec::new();
+
+    for arg in args {
+        if arg.starts_with("--") {
+            options.push(arg);
+        } else {
+            others.push(arg);
+        }
+    }
+
+    if options.len() == 1
+        && options
+            .first()
+            .expect("Could not get first option")
+            .as_str()
+            == "--remove"
+    {
+        if others.is_empty() {
+            return TaigaCmd::SprintTask(SprintTaskArgs {
+                project,
+                id,
+                sprint: None,
+                remove: true,
+            });
+        } else {
+            cli_project_sprint_help(project, id);
+            exit(1);
+        }
+    } else if !options.is_empty() {
+        cli_project_sprint_help(project, id);
+        exit(1);
+    }
+
+    if others.len() != 1 {
+        cli_project_sprint_help(project, id);
+        exit(1);
+    }
+
+    let sprint = others.first().expect("Could not get sprint").to_string();
+
+    TaigaCmd::SprintTask(SprintTaskArgs {
+        project,
+        id,
+        sprint: Some(sprint),
+        remove: false,
+    })
+}
+
+fn cli_project_sprint_help(project: String, id: usize) {
+    let mut help_message = HelpMessage::new(
+        "Set the sprint for a task",
+        &format!("taiga {} sprint {}", project, id),
+        "<ARGS> <OPTIONS>",
+    );
+    help_message.add_section("Arguments");
+    help_message.add_command("<SPRINT>", "The sprint to put the task in");
+    help_message.add_section("Options");
+    help_message.add_command("--remove", "Take the task out of its sprint");
+    help_message.add_command("--help", "Print the help message and exit");
+    help_message.display();
+}
+
+fn cli_project_subtask(project: String, story_id: usize, args: &[String]) -> TaigaCmd {
+    if args.is_empty() || args.first().map(|s| s.as_str()) == Some("--help") {
+        cli_project_subtask_help(project, story_id);
+        exit(if args.is_empty() { 1 } else { 0 });
+    }
+
+    let verb = args.first().expect("Could not get subtask verb");
+    let rest = &args[1..];
+
+    let action = match verb.as_str() {
+        "new" => {
+            if rest.contains(&"--help".to_string()) {
+                cli_project_subtask_help(project, story_id);
+                exit(0);
+            }
+
+            let mut assign = None;
+            let mut description = None;
+            let mut name_parts = Vec::new();
+            for arg in rest {
+                if let Some(username) = arg.strip_prefix('@') {
+                    if username.is_empty() || assign.is_some() {
+                        cli_project_subtask_help(project, story_id);
+                        exit(1);
+                    }
+                    assign = Some(username.to_string());
+                } else if let Some(desc) = arg.strip_prefix("desc:") {
+                    if desc.is_empty() || description.is_some() {
+                        cli_project_subtask_help(project, story_id);
+                        exit(1);
+                    }
+                    description = Some(desc.to_string());
+                } else {
+                    name_parts.push(arg.clone());
+                }
+            }
+
+            if name_parts.is_empty() {
+                cli_project_subtask_help(project, story_id);
+                exit(1);
+            }
+
+            SubtaskAction::New {
+                name: name_parts.join(" "),
+                description: description.unwrap_or_default(),
+                assign,
+            }
+        }
+        "list" => {
+            if !rest.is_empty() {
+                cli_project_subtask_help(project, story_id);
+                exit(1);
+            }
+            SubtaskAction::List
+        }
+        "desc" | "describe" => {
+            if rest.len() < 2 {
+                cli_project_subtask_help(project, story_id);
+                exit(1);
+            }
+            let index = rest[0].parse::<usize>().unwrap_or_else(|_| {
+                cli_project_subtask_help(project.clone(), story_id);
+                exit(1);
+            });
+            SubtaskAction::Describe {
+                index,
+                description: rest[1..].join(" "),
+            }
+        }
+        "del" | "delete" => {
+            if rest.len() != 1 {
+                cli_project_subtask_help(project, story_id);
+                exit(1);
+            }
+            let index = rest
+                .first()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    cli_project_subtask_help(project.clone(), story_id);
+                    exit(1);
+                });
+            SubtaskAction::Delete { index }
+        }
+        _ => {
+            cli_project_subtask_help(project, story_id);
+            exit(1);
+        }
+    };
+
+    TaigaCmd::Subtask(SubtaskArgs {
+        project,
+        story_id,
+        action,
+    })
+}
+
+fn cli_project_subtask_help(project: String, story_id: usize) {
+    let mut help_message = HelpMessage::new(
+        "Manage the tasks nested under a user story",
+        &format!("taiga {} subtask {}", project, story_id),
+        "[new|list|describe|delete] <ARGS>",
+    );
+    help_message.add_section("Commands");
+    help_message.add_command(
+        "new <NAME> <@USERNAME> <desc:TEXT>",
+        "Create a task under the story",
+    );
+    help_message.add_command("list", "List the tasks under the story");
+    help_message.add_command(
+        "describe <INDEX> <TEXT>",
+        "Set the description for a task by its list position",
+    );
+    help_message.add_command("delete <INDEX>", "Delete a task by its list position");
+    help_message.add_section("Options");
+    help_message.add_command("--help", "Print the help message and exit");
+    help_message.display();
+}
+
 fn cli_project_team(project: String, id: usize, args: &[String]) -> TaigaCmd {
     if args.contains(&"--help".to_string()) {
         cli_project_team_help(project, id);
@@ -1000,6 +1270,8 @@ fn cli_project_modify(project: String, id: usize, args: &[String]) -> TaigaCmd {
     let mut assigned = Vec::new();
 
     let mut dues = Vec::new();
+    let mut sprints = Vec::new();
+    let mut sprint_removes = 0;
 
     let mut teams = Vec::new();
     let mut clients = Vec::new();
@@ -1029,6 +1301,16 @@ fn cli_project_modify(project: String, id: usize, args: &[String]) -> TaigaCmd {
             if !others.is_empty() {
                 can_continuous = false;
             }
+        } else if arg.starts_with("sprint:") {
+            sprints.push(arg);
+            if !others.is_empty() {
+                can_continuous = false;
+            }
+        } else if arg == "-sprint" {
+            sprint_removes += 1;
+            if !others.is_empty() {
+                can_continuous = false;
+            }
         } else if arg.starts_with('+') || arg.starts_with('-') {
             match arg.as_str() {
                 "+team" => teams.push(true),
@@ -1055,6 +1337,11 @@ fn cli_project_modify(project: String, id: usize, args: &[String]) -> TaigaCmd {
             }
             others.push(arg.clone());
         }
+    }
+
+    if !sprints.is_empty() && sprint_removes > 0 {
+        cli_project_modify_help(project, id);
+        exit(1);
     }
 
     if !options.is_empty() {
@@ -1156,6 +1443,27 @@ fn cli_project_modify(project: String, id: usize, args: &[String]) -> TaigaCmd {
         Some(others.join(" "))
     };
 
+    let sprint = if sprint_removes > 0 {
+        Some(None)
+    } else {
+        match sprints.len().cmp(&1) {
+            Ordering::Equal => {
+                let sprint_str = *sprints.first().expect("Could not get sprint");
+                let sprint_rest = &sprint_str["sprint:".len()..];
+                if sprint_rest.is_empty() {
+                    cli_project_modify_help(project, id);
+                    exit(1);
+                }
+                Some(Some(sprint_rest.to_string()))
+            }
+            Ordering::Greater => {
+                cli_project_modify_help(project, id);
+                exit(1);
+            }
+            Ordering::Less => None,
+        }
+    };
+
     TaigaCmd::ModifyTask(ModifyTaskArgs {
         project,
         id,
@@ -1166,6 +1474,7 @@ fn cli_project_modify(project: String, id: usize, args: &[String]) -> TaigaCmd {
         team,
         client,
         block,
+        sprint,
     })
 }
 
@@ -1179,6 +1488,8 @@ fn cli_project_modify_help(project: String, id: usize) {
     help_message.add_command("status:<STATUS>", "The status to move the task to");
     help_message.add_command("@<USERNAME>", "The user to assign the task to");
     help_message.add_command("due:<DATE>", "The due date to give to the task");
+    help_message.add_command("sprint:<SPRINT>", "The sprint to put the task in");
+    help_message.add_command("-sprint", "Take the task out of its sprint");
     help_message.add_command("+/-team", "Add or remove the team requirement");
     help_message.add_command("+/-client", "Add or remove the client requirement");
     help_message.add_command("+/-block", "Add or remove the block");
@@ -1201,6 +1512,9 @@ fn cli_project_search(project: String, args: &[String]) -> TaigaCmd {
 
     let mut include_assigned = Vec::new();
     let mut exclude_assigned = Vec::new();
+
+    let mut include_sprints = Vec::new();
+    let mut exclude_sprints = Vec::new();
 
     let mut dues = Vec::new();
 
@@ -1239,6 +1553,16 @@ fn cli_project_search(project: String, args: &[String]) -> TaigaCmd {
             }
         } else if arg.starts_with("due:") {
             dues.push(arg);
+            if !query.is_empty() {
+                can_continuous = false;
+            }
+        } else if arg.starts_with("-sprint:") {
+            exclude_sprints.push(arg.clone());
+            if !query.is_empty() {
+                can_continuous = false;
+            }
+        } else if arg.starts_with("sprint:") {
+            include_sprints.push(arg.clone());
             if !query.is_empty() {
                 can_continuous = false;
             }
@@ -1290,6 +1614,11 @@ fn cli_project_search(project: String, args: &[String]) -> TaigaCmd {
     }
 
     if !include_statuses.is_empty() && !exclude_statuses.is_empty() {
+        cli_project_search_help(project);
+        exit(1);
+    }
+
+    if !include_sprints.is_empty() && !exclude_sprints.is_empty() {
         cli_project_search_help(project);
         exit(1);
     }
@@ -1362,6 +1691,38 @@ fn cli_project_search(project: String, args: &[String]) -> TaigaCmd {
         })
         .collect::<Vec<String>>();
 
+    let include_sprints = include_sprints
+        .iter()
+        .map(|sprint_str| {
+            let sprint_rest = if let Some(rest) = sprint_str.strip_prefix("sprint:") {
+                rest
+            } else {
+                unreachable!()
+            };
+            if sprint_rest.is_empty() {
+                cli_project_search_help(project.clone());
+                exit(1);
+            }
+            sprint_rest.to_string()
+        })
+        .collect::<Vec<String>>();
+
+    let exclude_sprints = exclude_sprints
+        .iter()
+        .map(|sprint_str| {
+            let sprint_rest = if let Some(rest) = sprint_str.strip_prefix("-sprint:") {
+                rest
+            } else {
+                unreachable!()
+            };
+            if sprint_rest.is_empty() {
+                cli_project_search_help(project.clone());
+                exit(1);
+            }
+            sprint_rest.to_string()
+        })
+        .collect::<Vec<String>>();
+
     let due_date = match dues.len().cmp(&1) {
         Ordering::Equal => {
             let due_str = *dues.first().expect("Could not get due");
@@ -1413,6 +1774,8 @@ fn cli_project_search(project: String, args: &[String]) -> TaigaCmd {
         exclude_statuses,
         include_assigned,
         exclude_assigned,
+        include_sprints,
+        exclude_sprints,
         due_date,
         team,
         client,
@@ -1439,6 +1802,8 @@ fn cli_project_search_help(project: String) {
         "due:<DATE>",
         "The due date to give to the task - empty for no dues",
     );
+    help_message.add_command("sprint:<SPRINT>", "A sprint the task is in");
+    help_message.add_command("-sprint:<SPRINT>", "A sprint the task is not in");
     help_message.add_command("+/-team", "Filter team requirement");
     help_message.add_command("+/-client", "Filter client requirement");
     help_message.add_command("+/-block", "Filter blocked tasks");
@@ -1471,6 +1836,11 @@ fn cli_help_project(project: String) {
     help_message.add_command("rename <CARD-ID>", "Rename a task");
     help_message.add_command("assign <CARD-ID>", "Assign a task");
     help_message.add_command("due <CARD-ID>", "Set due date for a task");
+    help_message.add_command("sprint <CARD-ID>", "Set the sprint for a task");
+    help_message.add_command(
+        "subtask <CARD-ID>",
+        "Manage the tasks nested under a user story",
+    );
     help_message.add_command("team <CARD-ID>", "Toggle team requirement for a task");
     help_message.add_command("client <CARD-ID>", "Toggle client requirement for a task");
     help_message.add_command("block <CARD-ID>", "Toggle block for a task");
