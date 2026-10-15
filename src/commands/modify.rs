@@ -48,7 +48,7 @@ pub fn modify(taiga: &mut Taiga, args: ModifyTaskArgs) -> Result<()> {
     let removed = ids(&args.unassign)?;
 
     edit(taiga, project, args.id, |task| {
-        let assigned_users = (!added.is_empty() || !removed.is_empty()).then(|| {
+        let assigned = (!added.is_empty() || !removed.is_empty()).then(|| {
             let mut users = task.assigned.clone();
             users.extend(&added);
             users.retain(|user| !removed.contains(user));
@@ -58,9 +58,10 @@ pub fn modify(taiga: &mut Taiga, args: ModifyTaskArgs) -> Result<()> {
         });
 
         Ok(TaskPatch {
+            assigned_to: assigned.as_ref().map(|users| users.first().copied()),
+            assigned_users: assigned,
             status,
             subject: args.rename,
-            assigned_users,
             due_date: args.due_date,
             team_requirement: args.team,
             client_requirement: args.client,

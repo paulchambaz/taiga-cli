@@ -58,6 +58,8 @@ pub struct TaskPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assigned_users: Option<Vec<i32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_to: Option<Option<i32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub due_date: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub team_requirement: Option<bool>,
@@ -68,6 +70,17 @@ pub struct TaskPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub milestone: Option<Option<i32>>,
     pub version: i32,
+}
+
+impl TaskPatch {
+    /// Sets the assignees, keeping the primary assignee in step so removals stick.
+    pub fn assigned(users: Vec<i32>) -> Self {
+        Self {
+            assigned_to: Some(users.first().copied()),
+            assigned_users: Some(users),
+            ..Default::default()
+        }
+    }
 }
 
 /// A user story to create.

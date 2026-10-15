@@ -104,10 +104,7 @@ pub fn assign(taiga: &mut Taiga, args: AssignTaskArgs) -> Result<()> {
                 .collect(),
             (false, false) => task.assigned.iter().copied().chain([member_id]).collect(),
         };
-        Ok(TaskPatch {
-            assigned_users: Some(assigned),
-            ..Default::default()
-        })
+        Ok(TaskPatch::assigned(assigned))
     })
 }
 

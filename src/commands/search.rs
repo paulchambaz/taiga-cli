@@ -8,7 +8,7 @@ use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{Cell, Row, Table};
 
 use crate::cli::SearchTaskArgs;
-use crate::taiga::{Error, Taiga, TaigaProject, TaigaTask};
+use crate::taiga::{Taiga, TaigaProject, TaigaTask};
 
 /// A search with every name resolved to an id.
 struct Filter<'a> {
@@ -119,10 +119,6 @@ pub fn search(taiga: &mut Taiga, args: SearchTaskArgs) -> Result<()> {
                 .iter()
                 .chain(&args.exclude_assigned)
                 .any(|username| project.member_id(username, me).is_err())
-            || tasks
-                .iter()
-                .flat_map(|task| &task.assigned)
-                .any(|id| project.members.iter().all(|m| m.id != *id))
     })?;
 
     let filter = Filter::new(&args, &project, me)?;
@@ -167,10 +163,9 @@ pub fn search(taiga: &mut Taiga, args: SearchTaskArgs) -> Result<()> {
                     .members
                     .iter()
                     .find(|m| m.id == *id)
-                    .map(|m| m.username.as_str())
-                    .ok_or_else(|| Error::UserNotFound(id.to_string()))
+                    .map_or_else(|| id.to_string(), |m| m.username.clone())
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Vec<_>>()
             .join(", ");
 
         let due = task
