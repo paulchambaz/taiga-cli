@@ -8,21 +8,13 @@ That being said, the real ground truth is taiga.io, and large operations (such a
 
 ## Installation
 
-There are a couple ways to install this project. First, it is hosted on crates.io, i have also added it to nixpkgs and on the arch user repository. Of course, you can always install it manually.
-
-### Manual
-
-To install the project manually, please consult the [**Building**](#building) section.
-
 ### Nix
 
-You can try this program in a `nix-shell`:
-
 ```sh
-nix-shell -p taiga-cli
+nix profile install github:paulchambaz/taiga-cli
 ```
 
-You can then add it to your `configuration.nix` if you're happy with it.
+Or add `github:paulchambaz/taiga-cli` as an input of your flake and install its `packages.default`. The man page and the shell completions are installed with it.
 
 ### Cargo
 
@@ -30,72 +22,57 @@ You can then add it to your `configuration.nix` if you're happy with it.
 cargo install taiga-cli
 ```
 
-### AUR
+### Manual
 
-```
-yay -S taiga-cli
-```
+See the [**Building**](#building) section.
 
 ## Usage
 
-To understand how to use this program, it is recommended to read the [`man`](./taiga.1.scd) page. All instructions are detailed there.
-
-Shell completion for zsh, bash and fish lives in `completions/`. It completes projects, task numbers, statuses, sprints, members and modifiers from the cache, so it follows your projects. `just install` puts each file where its shell looks (`~/.local/share/zsh/site-functions` needs to be in zsh's `fpath` before `compinit`; bash-completion and fish pick theirs up on their own). With `cargo install`, copy the files yourself.
-
-Here is a brief overview of the program :
+Login once, then every project is a command:
 
 ```sh
-taiga --help
-Cli tool for taiga.io
-
-Usage: taiga [PROJECT] [COMMAND] <OPTIONS>
-                     
-Commands:            
-  login              Login to a taiga instance
-  projects           Refresh and print the project list
-                     
-Projects:            
-  demo  Run command on demo
-                     
-Options:             
-  --help             Print the help message and exit
-  --version          Print the version and exit
+taiga login
+taiga demo                                  # list the tasks
+taiga demo new fix the login @me due:eow +team
+taiga demo 3 move in-progress
+taiga demo mod 3 -due +block better title
+taiga demo @me due:eow                      # my tasks due this week
+taiga demo 3 subtask new write the tests
+taiga demo burndown
 ```
 
-*Do note that demo is a placeholder and that your actual taiga project will be listed in the projects section.*
+Task numbers are the positions in the last list printed. Everything is detailed in the [`man`](./taiga.1.scd) page (`man taiga` once installed): commands, modifiers, filters, dates, subtasks and burndown.
+
+Completions for zsh, bash and fish are in [`completions/`](./completions) and follow your projects, statuses, sprints and members. See the man page for how to enable them.
+
+Your session is kept in `~/.cache/taiga/config` (readable only by you), password included, so it can be renewed. Delete the file to log out.
 
 ## Building
 
 ### Nix
 
-This project uses [nix](https://github.com/NixOS/nix) for development. If you want to contribute, it is recommended to install nix (not NixOS) to access the development shell.
-
 ```sh
 git clone https://github.com/paulchambaz/taiga-cli.git
 cd taiga-cli
-nix develop
-nix build # to build the project
-nix shell # to enter a shell where the built project is installed
-just --list # to list the dev commands
+nix develop # a shell with every dev tool
+nix build
+just --list # the dev commands
 ```
 
 ### Manual
 
-If you want to manually build the project, it isn't too hard either.
-
-You will need `scdoc` in order to build the man page and `just` to run the dev commands.
+You need `cargo`, `scdoc` for the man page and `just` for the dev commands.
 
 ```sh
-just run
 just build
-just fmt
-just coverage
-just watch-test
+just test
+just lint
+just install # binary, man page and completions in ~/.local
 ```
 
 ## Contribution
 
-Contributions to taiga-cli are welcome. Whether it's feature suggestions, bug reports, or code contributions, feel free to share your input. Please use the project GitHub repository to open issues or submit pull requests.
+Contributions are welcome: feature suggestions, bug reports or code, through issues and pull requests on GitHub.
 
 ## License
 
