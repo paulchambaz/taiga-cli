@@ -18,12 +18,13 @@
       ];
 
       libPkgs = with pkgs; [
-        openssl_3
+        openssl
       ];
 
       devPkgs = with pkgs; [
         cargo
         rustfmt
+        clippy
         rustc
         just
         cargo-tarpaulin
@@ -32,9 +33,9 @@
     in {
       packages.default = pkgs.rustPlatform.buildRustPackage {
         pname = "taiga-cli";
-        version = "1.1.3";
+        version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
         src = ./.;
-        cargoHash = "sha256-dKqCEJU01AcXKeYq8psMFBzVzYzbxY7Zxfnq5rFc0MI=";
+        cargoLock.lockFile = ./Cargo.lock;
 
         nativeBuildInputs = buildPkgs;
         buildInputs = libPkgs;
@@ -45,7 +46,7 @@
         '';
       };
 
-      devShell = pkgs.mkShell {
+      devShells.default = pkgs.mkShell {
         nativeBuildInputs = buildPkgs;
         buildInputs = libPkgs ++ devPkgs;
       };

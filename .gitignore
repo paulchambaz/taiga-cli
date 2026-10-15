@@ -4,5 +4,6 @@
 *.profraw
 /tarpaulin-report.html
 /cobertura.xml
+/taiga.1
 *.md
 !README.md
