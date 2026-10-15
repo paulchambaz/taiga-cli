@@ -37,4 +37,6 @@ pub enum Error {
     TaskNotFound(usize),
     #[error("the project has no statuses")]
     NoStatuses,
+    #[error("the project has no open sprint")]
+    NoOpenSprint,
 }

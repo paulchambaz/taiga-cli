@@ -10,9 +10,9 @@ use taiga::{Error, Taiga, TaigaSubtask};
 
 use cli::{parse_args, TaigaCmd};
 use cli::{
-    AssignTaskArgs, BlockTaskArgs, ClientTaskArgs, DeleteTaskArgs, DoneTaskArgs, DueTaskArgs,
-    ModifyTaskArgs, MoveTaskArgs, NewTaskArgs, ProjectUserArgs, RenameTaskArgs, SearchTaskArgs,
-    SprintTaskArgs, SubtaskAction, SubtaskArgs, TeamTaskArgs,
+    AssignTaskArgs, DueTaskArgs, ModifyTaskArgs, MoveTaskArgs, NewTaskArgs, ProjectBurndownArgs,
+    ProjectUserArgs, RenameTaskArgs, SearchTaskArgs, SprintTaskArgs, SubtaskAction, SubtaskArgs,
+    TaskArgs, ToggleTaskArgs,
 };
 
 fn main() -> Result<()> {
@@ -46,7 +46,8 @@ fn run(cmd: TaigaCmd, mut taiga: Taiga) -> Result<()> {
         TaigaCmd::DeleteTask(args) => taiga_delete(&mut taiga, args)?,
         TaigaCmd::SearchTask(args) => taiga_search(&mut taiga, args)?,
         TaigaCmd::ProjectUsers(args) => taiga_users(&mut taiga, args)?,
-        other => println!("TODO: {:?}", other),
+        TaigaCmd::ProjectBurndown(args) => taiga_burndown(&mut taiga, args)?,
+        TaigaCmd::Login(_) => {}
     }
     Ok(())
 }
@@ -369,6 +370,47 @@ pub fn taiga_users(taiga: &mut Taiga, args: ProjectUserArgs) -> Result<()> {
     Ok(())
 }
 
+pub fn taiga_burndown(taiga: &mut Taiga, args: ProjectBurndownArgs) -> Result<()> {
+    let project = taiga.load_project(&args.project, |project| {
+        args.sprint
+            .as_deref()
+            .is_some_and(|sprint| project.find_sprint(sprint).is_none())
+    })?;
+
+    let sprint_id = match &args.sprint {
+        Some(sprint) => project.sprint_id(sprint)?,
+        None => taiga.current_sprint(project.id)?,
+    };
+    let stats = taiga.sprint_stats(sprint_id)?;
+
+    println!(
+        "{}  {} to {}",
+        stats.name, stats.estimated_start, stats.estimated_finish
+    );
+    println!(
+        "stories {}/{}   tasks {}/{}",
+        stats.completed_userstories,
+        stats.total_userstories,
+        stats.completed_tasks,
+        stats.total_tasks
+    );
+    println!();
+
+    let points = |points: Option<f64>| points.map(|p| format!("{p:.1}")).unwrap_or_default();
+    let mut table = Table::new();
+    table.set_format(*FORMAT_CLEAN);
+    table.add_row(row!["DAY", "OPEN", "OPTIMAL"]);
+    for day in &stats.days {
+        table.add_row(Row::new(vec![
+            Cell::new(&day.day),
+            Cell::new(&points(day.open_points)),
+            Cell::new(&points(day.optimal_points)),
+        ]));
+    }
+    table.printstd();
+    Ok(())
+}
+
 pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) -> Result<()> {
     let mut project = taiga.load_project(&args.project, |project| {
         project.status_id(&args.status).is_err()
@@ -381,7 +423,7 @@ pub fn taiga_move(taiga: &mut Taiga, args: MoveTaskArgs) -> Result<()> {
     Ok(taiga.save_project(project)?)
 }
 
-pub fn taiga_delete(taiga: &mut Taiga, args: DeleteTaskArgs) -> Result<()> {
+pub fn taiga_delete(taiga: &mut Taiga, args: TaskArgs) -> Result<()> {
     let mut project = taiga.load_project(&args.project, |_| false)?;
     let task_id = project.get_task(args.id)?.id;
 
@@ -391,7 +433,7 @@ pub fn taiga_delete(taiga: &mut Taiga, args: DeleteTaskArgs) -> Result<()> {
     Ok(taiga.save_project(project)?)
 }
 
-pub fn taiga_done(taiga: &mut Taiga, args: DoneTaskArgs) -> Result<()> {
+pub fn taiga_done(taiga: &mut Taiga, args: TaskArgs) -> Result<()> {
     let mut project = taiga.load_project(&args.project, |_| false)?;
 
     let status_id = project
@@ -552,7 +594,7 @@ pub fn taiga_subtask(taiga: &mut Taiga, args: SubtaskArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn taiga_team(taiga: &mut Taiga, args: TeamTaskArgs) -> Result<()> {
+pub fn taiga_team(taiga: &mut Taiga, args: ToggleTaskArgs) -> Result<()> {
     let mut project = taiga.load_project(&args.project, |_| false)?;
     let task = project.get_task(args.id)?;
 
@@ -560,7 +602,7 @@ pub fn taiga_team(taiga: &mut Taiga, args: TeamTaskArgs) -> Result<()> {
     Ok(taiga.save_project(project)?)
 }
 
-pub fn taiga_client(taiga: &mut Taiga, args: ClientTaskArgs) -> Result<()> {
+pub fn taiga_client(taiga: &mut Taiga, args: ToggleTaskArgs) -> Result<()> {
     let mut project = taiga.load_project(&args.project, |_| false)?;
     let task = project.get_task(args.id)?;
 
@@ -568,7 +610,7 @@ pub fn taiga_client(taiga: &mut Taiga, args: ClientTaskArgs) -> Result<()> {
     Ok(taiga.save_project(project)?)
 }
 
-pub fn taiga_block(taiga: &mut Taiga, args: BlockTaskArgs) -> Result<()> {
+pub fn taiga_block(taiga: &mut Taiga, args: ToggleTaskArgs) -> Result<()> {
     let mut project = taiga.load_project(&args.project, |_| false)?;
     let task = project.get_task(args.id)?;
 
